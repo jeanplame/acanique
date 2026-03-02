@@ -1,0 +1,21 @@
+# Backups et fichiers SQL
+/backups/
+*.sql
+*.sql.gz
+
+# Fichiers volumineux
+/img/*.psd
+/logs/
+*.log
+
+# Caches et fichiers temporaires
+node_modules/
+vendor/
+.env
+composer.lock
+
+# OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

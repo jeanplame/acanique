@@ -1,0 +1,679 @@
+<?php
+/**
+ * PALMARÈS - Système de classement LMD/RDC
+ * Génère le palmarès officiel après délibération
+ * Conforme aux normes du système LMD en République Démocratique du Congo
+ * 
+ * Utilise la même logique que deliberation.php pour garantir la cohérence des calculs
+ */
+
+// Récupération des filtres
+$id_annee = $_SESSION['id_annee'] ?? 1;
+$id_semestre = isset($_GET['semestre']) && in_array($_GET['semestre'], ['1', '2']) ? (int) $_GET['semestre'] : null;
+$code_promo = $_GET['promotion'] ?? $_SESSION['promotion'] ?? null;
+$id_mention = $_GET['mention'] ?? '';
+$mode_rattrapage = isset($_GET['rattrapage']) && $_GET['rattrapage'] === '1';
+
+// Validation des paramètres
+if (empty($id_mention) || empty($id_annee)) {
+    echo "<div class='alert alert-danger'>Erreur : Paramètres manquants pour afficher le palmarès</div>";
+    return;
+}
+
+// Récupération des informations de la mention
+$sqlMention = "SELECT libelle FROM t_mention WHERE id_mention=?";
+$stmtMention = $pdo->prepare($sqlMention);
+$stmtMention->execute([$id_mention]);
+$mention = $stmtMention->fetchColumn();
+
+// Récupération de l'année académique
+$sqlAnnee = "SELECT date_debut, date_fin FROM t_anne_academique WHERE id_annee = ?";
+$stmtAnnee = $pdo->prepare($sqlAnnee);
+$stmtAnnee->execute([$id_annee]);
+$annee = $stmtAnnee->fetch(PDO::FETCH_ASSOC);
+$annee_academique = date('Y', strtotime($annee['date_debut'])) . '-' . date('Y', strtotime($annee['date_fin']));
+
+// =====================================================================
+// REPRISE DE LA LOGIQUE DE deliberation.php POUR CALCULER LES RÉSULTATS
+// =====================================================================
+
+// Étape 1: Récupérer la structure des cours (UE/EC) depuis vue_grille_deliberation
+$sql_structure = "
+    SELECT DISTINCT
+        matricule,
+        nom_complet,
+        code_ue,
+        libelle_ue,
+        credits,
+        code_ec,
+        libelle_ec,
+        coef_ec,
+        id_semestre,
+        semestre_mention,
+        code_promotion,
+        id_ue,
+        id_ec
+    FROM vue_grille_deliberation
+    WHERE id_annee = :annee
+    " . ($id_mention ? "AND id_mention = :mention" : "") . "
+    " . ($id_semestre ? "AND semestre_mention = :semestre" : "") . "
+    " . ($code_promo ? "AND code_promotion = :promo" : "") . "
+    ORDER BY nom_complet, code_ue, code_ec
+";
+
+$stmt = $pdo->prepare($sql_structure);
+
+// Paramètres dynamiques
+$params = ['annee' => $id_annee];
+if ($id_mention)
+    $params['mention'] = $id_mention;
+if ($id_semestre)
+    $params['semestre'] = $id_semestre;
+if ($code_promo)
+    $params['promo'] = $code_promo;
+
+$stmt->execute($params);
+$structure = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Étape 2: Récupérer toutes les cotes récentes (EC et UE séparément)
+$cotes_recentes = [];
+if (!empty($structure)) {
+    // Partie 1: Cotes des EC (éléments constitutifs)
+    $sql_cotes_ec = "
+        SELECT 
+            c.matricule,
+            c.id_ec,
+            c.id_ue,
+            c.cote_s1,
+            c.cote_s2,
+            c.cote_rattrapage_s1,
+            c.cote_rattrapage_s2,
+            c.date_rattrapage_s1,
+            c.date_rattrapage_s2,
+            c.id_note
+        FROM t_cote c
+        INNER JOIN (
+            SELECT 
+                matricule,
+                id_ec,
+                MAX(id_note) as max_id_note
+            FROM t_cote
+            WHERE id_annee = :annee
+            " . ($id_mention ? "AND id_mention = :mention" : "") . "
+            AND id_ec IS NOT NULL
+            GROUP BY matricule, id_ec
+        ) latest_ec ON c.matricule = latest_ec.matricule 
+        AND c.id_ec = latest_ec.id_ec 
+        AND c.id_note = latest_ec.max_id_note
+        WHERE c.id_annee = :annee
+        " . ($id_mention ? "AND c.id_mention = :mention" : "") . "
+        AND c.id_ec IS NOT NULL
+    ";
+    
+    $stmt_cotes_ec = $pdo->prepare($sql_cotes_ec);
+    $stmt_cotes_ec->execute($params);
+    
+    while ($row = $stmt_cotes_ec->fetch(PDO::FETCH_ASSOC)) {
+        $key = $row['matricule'] . '_EC_' . $row['id_ec'];
+        $cotes_recentes[$key] = $row;
+    }
+    
+    // Partie 2: Cotes des UE (unités d'enseignement sans EC)
+    $sql_cotes_ue = "
+        SELECT 
+            c.matricule,
+            c.id_ec,
+            c.id_ue,
+            c.cote_s1,
+            c.cote_s2,
+            c.cote_rattrapage_s1,
+            c.cote_rattrapage_s2,
+            c.date_rattrapage_s1,
+            c.date_rattrapage_s2,
+            c.id_note
+        FROM t_cote c
+        INNER JOIN (
+            SELECT 
+                matricule,
+                id_ue,
+                MAX(id_note) as max_id_note
+            FROM t_cote
+            WHERE id_annee = :annee
+            " . ($id_mention ? "AND id_mention = :mention" : "") . "
+            AND id_ec IS NULL
+            AND id_ue IS NOT NULL
+            GROUP BY matricule, id_ue
+        ) latest_ue ON c.matricule = latest_ue.matricule 
+        AND c.id_ue = latest_ue.id_ue 
+        AND c.id_note = latest_ue.max_id_note
+        WHERE c.id_annee = :annee
+        " . ($id_mention ? "AND c.id_mention = :mention" : "") . "
+        AND c.id_ec IS NULL
+        AND c.id_ue IS NOT NULL
+    ";
+    
+    $stmt_cotes_ue = $pdo->prepare($sql_cotes_ue);
+    $stmt_cotes_ue->execute($params);
+    
+    while ($row = $stmt_cotes_ue->fetch(PDO::FETCH_ASSOC)) {
+        $key = $row['matricule'] . '_UE_' . $row['id_ue'];
+        $cotes_recentes[$key] = $row;
+    }
+}
+
+// Étape 3: Fusionner structure et cotes
+$resultats_bruts = [];
+foreach ($structure as $row) {
+    $matricule = $row['matricule'];
+    
+    // Déterminer la bonne clé selon le type d'élément
+    if (!empty($row['id_ec']) && $row['id_ec'] != $row['id_ue'] && $row['code_ec'] != $row['code_ue']) {
+        $key = $matricule . '_EC_' . $row['id_ec'];
+    } else {
+        $key = $matricule . '_UE_' . $row['id_ue'];
+    }
+    
+    $cote_data = $cotes_recentes[$key] ?? null;
+    
+    $row['cote_s1'] = $cote_data['cote_s1'] ?? null;
+    $row['cote_s2'] = $cote_data['cote_s2'] ?? null;
+    $row['cote_rattrapage_s1'] = $cote_data['cote_rattrapage_s1'] ?? null;
+    $row['cote_rattrapage_s2'] = $cote_data['cote_rattrapage_s2'] ?? null;
+    
+    // Calculs pour mode rattrapage
+    if ($mode_rattrapage) {
+        $cote_rattrapage_s1 = $cote_data['cote_rattrapage_s1'] ?? 0;
+        $cote_s1 = $cote_data['cote_s1'] ?? 0;
+        $row['meilleure_cote_s1'] = ($cote_rattrapage_s1 > $cote_s1) ? $cote_rattrapage_s1 : $cote_s1;
+        $row['est_rattrapage_s1'] = ($cote_rattrapage_s1 > $cote_s1) ? 1 : 0;
+
+        $cote_rattrapage_s2 = $cote_data['cote_rattrapage_s2'] ?? 0;
+        $cote_s2 = $cote_data['cote_s2'] ?? 0;
+        $row['meilleure_cote_s2'] = ($cote_rattrapage_s2 > $cote_s2) ? $cote_rattrapage_s2 : $cote_s2;
+        $row['est_rattrapage_s2'] = ($cote_rattrapage_s2 > $cote_s2) ? 1 : 0;
+        
+        // Moyenne avec rattrapage
+        if ($row['code_ec'] != $row['code_ue']) {
+            $row['moyenne_ec'] = ($row['meilleure_cote_s1'] + $row['meilleure_cote_s2']) / 2;
+        } else {
+            $row['moyenne_ec'] = $row['meilleure_cote_s1'];
+        }
+    } else {
+        // Mode normal
+        if ($row['code_ec'] != $row['code_ue']) {
+            $row['moyenne_ec'] = (($cote_data['cote_s1'] ?? 0) + ($cote_data['cote_s2'] ?? 0)) / 2;
+        } else {
+            $row['moyenne_ec'] = $cote_data['cote_s1'] ?? 0;
+        }
+    }
+    
+    $resultats_bruts[] = $row;
+}
+
+// Étape 4: Organiser les données par étudiant et calculer les moyennes
+$etudiants = [];
+$ues = [];
+
+foreach ($resultats_bruts as $row) {
+    $mat = $row['matricule'];
+    $codeUE = $row['code_ue'];
+    $codeEC = $row['code_ec'];
+    $semestre = (int) ($row['semestre_mention'] ?? $row['id_semestre']);
+
+    // Initialiser l'UE
+    if (!isset($ues[$codeUE])) {
+        $ues[$codeUE] = [
+            'libelle' => $row['libelle_ue'],
+            'credits' => isset($row['credits']) ? (float) $row['credits'] : 0,
+            'ecs' => []
+        ];
+    }
+
+    // Détecter UE sans EC
+    $isUeSansEc = ($codeEC === $codeUE) || empty($codeEC);
+
+    if ($isUeSansEc) {
+        $ues[$codeUE]['ecs'][$codeEC] = [
+            'libelle' => $row['libelle_ec'] ?? $row['libelle_ue'],
+            'coef' => null,
+            'semestre' => $semestre,
+            'is_ue_sans_ec' => true
+        ];
+    } else {
+        if (!isset($ues[$codeUE]['ecs'][$codeEC])) {
+            $ues[$codeUE]['ecs'][$codeEC] = [
+                'libelle' => $row['libelle_ec'],
+                'coef' => isset($row['coef_ec']) ? (float) $row['coef_ec'] : 1,
+                'semestre' => $semestre,
+                'is_ue_sans_ec' => false
+            ];
+        }
+    }
+
+    // Notes par étudiant
+    if (!isset($etudiants[$mat])) {
+        $etudiants[$mat] = [
+            'nom' => $row['nom_complet'],
+            'notes' => []
+        ];
+    }
+
+    if (!isset($etudiants[$mat]['notes'][$codeUE])) {
+        $etudiants[$mat]['notes'][$codeUE] = [];
+    }
+
+    if (!isset($etudiants[$mat]['notes'][$codeUE][$codeEC])) {
+        $etudiants[$mat]['notes'][$codeUE][$codeEC] = [
+            's1' => null,
+            's2' => null,
+            'moy' => null
+        ];
+    }
+
+    // Stocker les notes
+    if ($mode_rattrapage) {
+        $etudiants[$mat]['notes'][$codeUE][$codeEC] = [
+            's1' => $row['meilleure_cote_s1'],
+            's2' => $row['meilleure_cote_s2'],
+            'moy' => $row['moyenne_ec'],
+            'est_rattrapage_s1' => $row['est_rattrapage_s1'],
+            'est_rattrapage_s2' => $row['est_rattrapage_s2']
+        ];
+    } else {
+        $etudiants[$mat]['notes'][$codeUE][$codeEC] = [
+            's1' => $row['cote_s1'],
+            's2' => $row['cote_s2'],
+            'moy' => $row['moyenne_ec']
+        ];
+    }
+}
+
+// Fonctions de calcul (reprises de deliberation.php)
+function calcTotalNotes($notes, $ues) {
+    $total = 0;
+    foreach ($ues as $codeUE => $ue) {
+        if (empty($ue['ecs'])) continue;
+        
+        foreach ($ue['ecs'] as $codeEC => $ec) {
+            if (isset($notes[$codeUE][$codeEC])) {
+                $note1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
+                $note2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
+                
+                if ($ec['is_ue_sans_ec']) {
+                    $note = $note1;
+                    $coef = $ue['credits'] ?? 1;
+                } else {
+                    $note = ($note1 !== null && $note2 !== null) ? ($note1 + $note2) / 2 : null;
+                    $coef = $ec['coef'] ?? 1;
+                }
+                
+                if (!is_null($note)) {
+                    $total += $note * $coef;
+                }
+            }
+        }
+    }
+    return $total;
+}
+
+function calcTotalCoef($ues) {
+    $total = 0;
+    foreach ($ues as $ue) {
+        if (empty($ue['ecs'])) {
+            $total += $ue['credits'] ?? 0;
+        } else {
+            foreach ($ue['ecs'] as $ec) {
+                if ($ec['is_ue_sans_ec']) {
+                    $total += $ue['credits'] ?? 0;
+                } else {
+                    $coef = $ec['coef'] ?? 1;
+                    $total += $coef;
+                }
+            }
+        }
+    }
+    return $total;
+}
+
+function calcCreditsValides($notes, $ues) {
+    $totalCredits = 0;
+    foreach ($ues as $codeUE => $ue) {
+        if (empty($ue['ecs'])) continue;
+        
+        if (count($ue['ecs']) == 1 && isset($ue['ecs'][$codeUE])) {
+            // UE sans EC
+            $noteS1 = $notes[$codeUE][$codeUE]['s1'] ?? null;
+            $noteS2 = $notes[$codeUE][$codeUE]['s2'] ?? null;
+            if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
+                $totalCredits += $ue['credits'];
+            }
+        } else {
+            // UE avec EC
+            $ueValidee = false;
+            foreach ($ue['ecs'] as $codeEC => $ec) {
+                if (isset($notes[$codeUE][$codeEC])) {
+                    $noteS1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
+                    $noteS2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
+                    if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
+                        $ueValidee = true;
+                        break;
+                    }
+                }
+            }
+            if ($ueValidee) {
+                foreach ($ue['ecs'] as $ec) {
+                    $totalCredits += $ec['coef'] ?? 1;
+                }
+            }
+        }
+    }
+    return $totalCredits;
+}
+
+function calcMoyennePonderee($totalNotes, $totalCredits) {
+    return $totalCredits ? $totalNotes / $totalCredits : 0;
+}
+
+// Fonction pour calculer la mention LMD/RDC
+function getMentionLMD($moyenne) {
+    if ($moyenne >= 18) return 'Excellence';
+    if ($moyenne >= 16) return 'Très Bien';
+    if ($moyenne >= 14) return 'Bien';
+    if ($moyenne >= 12) return 'Assez Bien';
+    if ($moyenne >= 10) return 'Passable';
+    return 'Ajournés';
+}
+
+function getCodeMention($moyenne) {
+    if ($moyenne >= 18) return 'A';
+    if ($moyenne >= 16) return 'B';
+    if ($moyenne >= 14) return 'C';
+    if ($moyenne >= 12) return 'D';
+    if ($moyenne >= 10) return 'E';
+    return 'F';
+}
+
+// Calculer le palmarès
+$palmares = [];
+foreach ($etudiants as $matricule => $etudiant) {
+    $totalNotes = calcTotalNotes($etudiant['notes'], $ues);
+    $totalCoef = calcTotalCoef($ues);
+    $moyenne = calcMoyennePonderee($totalNotes, $totalCoef);
+    $creditsValides = calcCreditsValides($etudiant['notes'], $ues);
+    $pourcentage = $totalCoef ? ($creditsValides / $totalCoef) * 100 : 0;
+    
+    $palmares[] = [
+        'matricule' => $matricule,
+        'nom_complet' => $etudiant['nom'],
+        'moyenne' => $moyenne,
+        'credits_valides' => $creditsValides,
+        'total_credits' => $totalCoef,
+        'pourcentage' => $pourcentage,
+        'mention' => getMentionLMD($moyenne),
+        'code_mention' => getCodeMention($moyenne),
+        'decision' => $moyenne >= 10 ? 'ADMIS' : 'AJOURNÉ'
+    ];
+}
+
+// Trier par moyenne décroissante
+usort($palmares, function($a, $b) {
+    return $b['moyenne'] <=> $a['moyenne'];
+});
+
+// Calculer les statistiques
+$total_etudiants = count($palmares);
+$total_admis = 0;
+$total_ajournes = 0;
+$mentions_stats = [
+    'Excellence' => 0,
+    'Très Bien' => 0,
+    'Bien' => 0,
+    'Assez Bien' => 0,
+    'Passable' => 0,
+    'Ajournés' => 0
+];
+
+foreach ($palmares as $resultat) {
+    $mentions_stats[$resultat['mention']]++;
+    if ($resultat['decision'] === 'ADMIS') {
+        $total_admis++;
+    } else {
+        $total_ajournes++;
+    }
+}
+
+$taux_reussite = $total_etudiants > 0 ? ($total_admis / $total_etudiants) * 100 : 0;
+?>
+
+<!-- Interface du Palmarès -->
+<div class="container-fluid mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-trophy-fill me-2"></i>
+                    Palmarès - <?= htmlspecialchars($mention) ?> (<?= $annee_academique ?>)
+                </h5>
+                <div>
+                    <a href="imprimer_palmares.php?mention=<?= $id_mention ?>&annee=<?= $id_annee ?>&semestre=<?= $id_semestre ?>&rattrapage=<?= $mode_rattrapage ? '1' : '0' ?><?= $code_promo ? '&promotion=' . urlencode($code_promo) : '' ?>" 
+                       class="btn btn-light btn-sm" target="_blank">
+                        <i class="bi bi-printer-fill me-1"></i> Imprimer
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <!-- Filtres -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Type de session</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="session_type" id="session_normale" value="normale" 
+                               <?= !$mode_rattrapage ? 'checked' : '' ?> onchange="location.href='?tab=notes&notes_tab=palmares&rattrapage=0&semestre=<?= $id_semestre ?>'">
+                        <label class="btn btn-outline-primary" for="session_normale">Session Normale</label>
+                        
+                        <input type="radio" class="btn-check" name="session_type" id="session_rattrapage" value="rattrapage" 
+                               <?= $mode_rattrapage ? 'checked' : '' ?> onchange="location.href='?tab=notes&notes_tab=palmares&rattrapage=1&semestre=<?= $id_semestre ?>'">
+                        <label class="btn btn-outline-primary" for="session_rattrapage">Avec Rattrapage</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Semestre</label>
+                    <select class="form-select" onchange="location.href='?tab=notes&notes_tab=palmares&rattrapage=<?= $mode_rattrapage ? '1' : '0' ?>&semestre=' + this.value">
+                        <option value="">Année complète</option>
+                        <option value="1" <?= $id_semestre === 1 ? 'selected' : '' ?>>Semestre 1</option>
+                        <option value="2" <?= $id_semestre === 2 ? 'selected' : '' ?>>Semestre 2</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Statistiques -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body text-center">
+                            <h3 class="mb-0"><?= $total_etudiants ?></h3>
+                            <small>Total Étudiants</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body text-center">
+                            <h3 class="mb-0"><?= $total_admis ?></h3>
+                            <small>Admis (<?= number_format($taux_reussite, 1) ?>%)</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-danger text-white">
+                        <div class="card-body text-center">
+                            <h3 class="mb-0"><?= $total_ajournes ?></h3>
+                            <small>Ajournés</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body text-center">
+                            <h3 class="mb-0"><?= number_format($palmares[0]['moyenne'] ?? 0, 2) ?>/20</h3>
+                            <small>Meilleure Moyenne</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Répartition des mentions -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h6 class="fw-bold mb-3">Répartition par mention</h6>
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Mention</th>
+                                <th>Code</th>
+                                <th>Effectif</th>
+                                <th>Pourcentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="table-success">
+                                <td>Excellence (≥ 18/20)</td>
+                                <td>A</td>
+                                <td><?= $mentions_stats['Excellence'] ?></td>
+                                <td><?= $total_etudiants > 0 ? number_format(($mentions_stats['Excellence'] / $total_etudiants) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                            <tr class="table-success">
+                                <td>Très Bien (≥ 16/20)</td>
+                                <td>B</td>
+                                <td><?= $mentions_stats['Très Bien'] ?></td>
+                                <td><?= $total_etudiants > 0 ? number_format(($mentions_stats['Très Bien'] / $total_etudiants) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                            <tr class="table-info">
+                                <td>Bien (≥ 14/20)</td>
+                                <td>C</td>
+                                <td><?= $mentions_stats['Bien'] ?></td>
+                                <td><?= $total_etudiants > 0 ? number_format(($mentions_stats['Bien'] / $total_etudiants) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                            <tr class="table-warning">
+                                <td>Assez Bien (≥ 12/20)</td>
+                                <td>D</td>
+                                <td><?= $mentions_stats['Assez Bien'] ?></td>
+                                <td><?= $total_etudiants > 0 ? number_format(($mentions_stats['Assez Bien'] / $total_etudiants) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                            <tr>
+                                <td>Passable (≥ 10/20)</td>
+                                <td>E</td>
+                                <td><?= $mentions_stats['Passable'] ?></td>
+                                <td><?= $total_etudiants > 0 ? number_format(($mentions_stats['Passable'] / $total_etudiants) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                            <tr class="table-danger">
+                                <td>Ajournés (< 10/20)</td>
+                                <td>F</td>
+                                <td><?= $mentions_stats['Ajournés'] ?></td>
+                                <td><?= $total_etudiants > 0 ? number_format(($mentions_stats['Ajournés'] / $total_etudiants) * 100, 1) : 0 ?>%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Classement des étudiants -->
+            <div class="row">
+                <div class="col-12">
+                    <h6 class="fw-bold mb-3">Classement général</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Rang</th>
+                                    <th>Matricule</th>
+                                    <th>Nom complet</th>
+                                    <th class="text-center">Moyenne/20</th>
+                                    <th class="text-center">Crédits validés</th>
+                                    <th class="text-center">%</th>
+                                    <th class="text-center">Mention</th>
+                                    <th class="text-center">Décision</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php 
+                                $rang = 0;
+                                foreach ($palmares as $index => $resultat): 
+                                    $rang++;
+                                    $row_class = '';
+                                    if ($rang === 1) $row_class = 'table-warning fw-bold'; // Or
+                                    elseif ($rang === 2) $row_class = 'table-secondary fw-bold'; // Argent
+                                    elseif ($rang === 3) $row_class = 'bg-bronze fw-bold'; // Bronze
+                                    elseif ($resultat['decision'] === 'AJOURNÉ') $row_class = 'table-danger';
+                                ?>
+                                <tr class="<?= $row_class ?>">
+                                    <td>
+                                        <?php if ($rang === 1): ?>
+                                            <i class="bi bi-trophy-fill text-warning"></i> <?= $rang ?>
+                                        <?php elseif ($rang === 2): ?>
+                                            <i class="bi bi-award-fill text-secondary"></i> <?= $rang ?>
+                                        <?php elseif ($rang === 3): ?>
+                                            <i class="bi bi-award text-bronze"></i> <?= $rang ?>
+                                        <?php else: ?>
+                                            <?= $rang ?>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= htmlspecialchars($resultat['matricule']) ?></td>
+                                    <td><?= htmlspecialchars($resultat['nom_complet']) ?></td>
+                                    <td class="text-center fw-bold"><?= number_format($resultat['moyenne'], 2) ?></td>
+                                    <td class="text-center"><?= number_format($resultat['credits_valides'], 0) ?></td>
+                                    <td class="text-center"><?= number_format($resultat['pourcentage'], 1) ?>%</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-<?php
+                                            $badge_color = 'secondary';
+                                            switch($resultat['code_mention']) {
+                                                case 'A':
+                                                case 'B':
+                                                    $badge_color = 'success';
+                                                    break;
+                                                case 'C':
+                                                    $badge_color = 'info';
+                                                    break;
+                                                case 'D':
+                                                    $badge_color = 'warning';
+                                                    break;
+                                                case 'E':
+                                                    $badge_color = 'secondary';
+                                                    break;
+                                                case 'F':
+                                                    $badge_color = 'danger';
+                                                    break;
+                                            }
+                                            echo $badge_color;
+                                        ?>">
+                                            <?= htmlspecialchars($resultat['mention']) ?> (<?= $resultat['code_mention'] ?>)
+                                        </span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-<?= $resultat['decision'] === 'ADMIS' ? 'success' : 'danger' ?>">
+                                            <?= $resultat['decision'] ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.bg-bronze {
+    background-color: #cd7f32 !important;
+    color: white !important;
+}
+.text-bronze {
+    color: #cd7f32 !important;
+}
+</style>

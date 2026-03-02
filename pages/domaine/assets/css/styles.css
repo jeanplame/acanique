@@ -1,0 +1,48 @@
+.sidebar-management {
+    height: calc(100vh - 60px);
+    overflow-y: auto;
+}
+
+.sidebar-management .card {
+    border-radius: 0;
+}
+
+.nav-tabs .nav-link {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+.filiere-list .list-group-item {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.filiere-list .list-group-item:hover {
+    background-color: rgba(0,0,0,.03);
+}
+
+.filiere-list small {
+    font-size: 0.8rem;
+}
+
+.mention-item.active {
+    background-color: #e9ecef;
+}
+
+.mention-item .mention-content:hover {
+    background-color: rgba(0,0,0,.03);
+}
+
+.promotion-item.active {
+    background-color: #e9ecef;
+}
+
+.promotion-item:hover {
+    background-color: rgba(0,0,0,.03);
+}
+
+.required::after {
+    content: "*";
+    color: red;
+    margin-left: 4px;
+}

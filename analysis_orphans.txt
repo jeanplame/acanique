@@ -1,0 +1,6 @@
+ANALYSE DES ORPHELINS - id_ue
+============================================================
+
+UEs valides: 1
+UEs invalides référencées: 0
+

@@ -1,0 +1,25 @@
+.mention-list .list-group-item {
+    transition: all 0.2s ease;
+}
+
+.mention-list .list-group-item:hover {
+    background-color: rgba(0,0,0,.03);
+}
+
+.mention-list .btn-group {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.mention-list .list-group-item:hover .btn-group {
+    opacity: 1;
+}
+
+#addMentionModal .form-control:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+
+.modal-backdrop {
+    z-index: 1040;
+}

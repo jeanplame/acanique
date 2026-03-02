@@ -1,0 +1,66 @@
+/* Styles pour la configuration académique */
+.config-step {
+    position: relative;
+    padding-left: 20px;
+}
+
+.config-step::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 30px;
+    bottom: -20px;
+    width: 2px;
+    background-color: #e9ecef;
+    z-index: 1;
+}
+
+.config-step:last-child::before {
+    display: none;
+}
+
+.step-indicator {
+    position: relative;
+    z-index: 2;
+    background-color: #fff;
+}
+
+.config-step.active .step-indicator i {
+    color: #0d6efd;
+}
+
+.config-step select:disabled {
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+}
+
+/* Animation des cartes */
+.card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Style des boutons d'action */
+.action-buttons {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.card:hover .action-buttons {
+    opacity: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .config-step {
+        padding-left: 15px;
+    }
+    
+    .action-buttons {
+        opacity: 1;
+    }
+}
