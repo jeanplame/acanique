@@ -1,7 +1,10 @@
-# Backups et fichiers SQL
+# Backups du dossier principal
 /backups/
+
+# Fichiers SQL génériques (mais pas les sauvegardes automatiques)
 *.sql
 *.sql.gz
+!database/backups/*.sql
 
 # Fichiers volumineux
 /img/*.psd
