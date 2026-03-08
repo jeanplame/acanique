@@ -124,4 +124,3 @@ if (!defined('DB_CONFIG_INCLUDED')) {
         die("Erreur de connexion : " . $e->getMessage());
     }
 }
-?>

@@ -197,7 +197,8 @@ function getECsForPromotion($pdo, $promotion_code, $id_semestre, $mention_id)
             WHERE ap.code_promotion = :code_promo
                 AND mue.semestre = :id_semestre
                 AND mue.id_mention = :id_mention
-                AND ue.statut = 'actif'
+                AND ue.is_programmed = 1
+                AND (ec.is_programmed = 1 OR ec.id_ec IS NULL)
             ORDER BY ue.libelle ASC, ec.libelle ASC
         ";
         

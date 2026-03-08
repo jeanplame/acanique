@@ -1,10 +1,8 @@
 <?php
-    header('Content-Type: text/html; charset=UTF-8');
 // tabs/ue.php
-
 // Ce fichier gère l'affichage des Unités d'Enseignement (UE) pour une promotion et un semestre donnés.
-// Les variables $mention_id et $promotion_code sont déjà disponibles depuis le fichier parent.
-// Nous aurons besoin de l'ID du semestre ($id_semestre) pour filtrer les UE.
+
+header('Content-Type: text/html; charset=UTF-8');
 
 // Inclure les fonctions nécessaires
 require_once 'includes/domaine_functions.php';
@@ -206,6 +204,12 @@ if ($ue_sub_tab === 'gerer_ec' && $_SERVER['REQUEST_METHOD'] === 'POST' && !empt
                 <a class="nav-link <?php echo $ue_sub_tab === 'ajouter' ? 'active' : ''; ?>"
                     href="?page=domaine&action=view&id=<?php echo $id_domaine; ?>&mention=<?php echo $mention_id; ?>&promotion=<?php echo $promotion_code; ?>&annee=<?php echo $id_annee; ?>&semestre=<?php echo $id_semestre; ?>&tab=ue&sub_tab=ajouter">
                     Ajouter une UE
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?php echo $ue_sub_tab === 'programmation' ? 'active' : ''; ?>"
+                    href="?page=domaine&action=view&id=<?php echo $id_domaine; ?>&mention=<?php echo $mention_id; ?>&promotion=<?php echo $promotion_code; ?>&annee=<?php echo $id_annee; ?>&semestre=<?php echo $id_semestre; ?>&tab=ue&sub_tab=programmation">
+                    <i class="bi bi-calendar-check"></i> Programmation
                 </a>
             </li>
             <!-- Nouvel onglet pour gérer les EC -->
@@ -843,6 +847,246 @@ if ($ue_sub_tab === 'gerer_ec' && $_SERVER['REQUEST_METHOD'] === 'POST' && !empt
                         Erreur : UE non trouvée ou ID UE manquant.
                     </div>
                 <?php endif; ?>
+
+            <?php elseif ($ue_sub_tab === 'programmation'): ?>
+                <!-- SOUS-ONGLET: PROGRAMMATION DES UES/ECS -->
+                <?php
+                // ========================================================
+                // RÉCUPÉRER LES UES ET ECS POUR LE SEMESTRE
+                // ========================================================
+                $stmt_ues = $pdo->prepare("
+                    SELECT 
+                        ue.id_ue,
+                        ue.code_ue,
+                        ue.libelle,
+                        ue.credits,
+                        ue.is_programmed,
+                        COUNT(ec.id_ec) as nb_ecs
+                    FROM t_unite_enseignement ue
+                    LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue
+                    WHERE ue.code_promotion = ? 
+                        AND ue.id_semestre = ?
+                    GROUP BY ue.id_ue
+                    ORDER BY ue.code_ue ASC
+                ");
+                $stmt_ues->execute([$promotion_code, $id_semestre]);
+                $ues_prog = $stmt_ues->fetchAll(PDO::FETCH_ASSOC);
+                ?>
+
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0">
+                            📋 Programmation des UEs/ECs
+                            <small class="ms-2">Semestre</small>
+                        </h4>
+                    </div>
+                    
+                    <div class="card-body">
+                        <p class="text-muted">
+                            Cochez les unités d'enseignement et éléments constitutifs que vous souhaitez programmer pour cette année académique.
+                            Les UEs/ECs programmées seront disponibles pour la saisie des notes et la délibération.
+                        </p>
+                        
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-success btn-sm" onclick="toggleAllUEs(true)">
+                                ✓ Programmer toutes les UEs
+                            </button>
+                            <button type="button" class="btn btn-warning btn-sm" onclick="toggleAllUEs(false)">
+                                ✗ Déprogrammer toutes les UEs
+                            </button>
+                        </div>
+
+                        <div id="programmation-list">
+                            <?php if (!empty($ues_prog)): ?>
+                                <?php foreach ($ues_prog as $ue): ?>
+                                    <div class="card mb-3 border-start border-4 <?php echo $ue['is_programmed'] ? 'border-success' : 'border-danger'; ?>">
+                                        <div class="card-header bg-light">
+                                            <div class="row align-items-center">
+                                                <div class="col">
+                                                    <div class="form-check">
+                                                        <input 
+                                                            class="form-check-input ue-checkbox" 
+                                                            type="checkbox" 
+                                                            id="ue_<?php echo $ue['id_ue']; ?>"
+                                                            data-ue-id="<?php echo $ue['id_ue']; ?>"
+                                                            <?php echo $ue['is_programmed'] ? 'checked' : ''; ?>
+                                                            onchange="toggleUE(this)">
+                                                        <label class="form-check-label fw-bold" for="ue_<?php echo $ue['id_ue']; ?>">
+                                                            <code><?php echo htmlspecialchars($ue['code_ue']); ?></code>
+                                                            - <?php echo htmlspecialchars($ue['libelle']); ?>
+                                                            <span class="badge bg-info ms-2"><?php echo $ue['credits']; ?> crédits</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-auto">
+                                                    <small class="text-muted">
+                                                        <?php echo $ue['nb_ecs']; ?> EC<?php echo $ue['nb_ecs'] > 1 ? 's' : ''; ?>
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- AFFICHAGE DES ECS SOUS L'UE -->
+                                        <?php
+                                        $stmt_ecs = $pdo->prepare("
+                                            SELECT id_ec, code_ec, libelle, coefficient, is_programmed
+                                            FROM t_element_constitutif
+                                            WHERE id_ue = ?
+                                            ORDER BY code_ec ASC
+                                        ");
+                                        $stmt_ecs->execute([$ue['id_ue']]);
+                                        $ecs_prog = $stmt_ecs->fetchAll(PDO::FETCH_ASSOC);
+                                        
+                                        if (!empty($ecs_prog)) {
+                                            echo '<div class="card-body pt-3">';
+                                            echo '<div class="table-responsive">';
+                                            echo '<table class="table table-sm table-hover mb-0">';
+                                            echo '<thead class="table-light">';
+                                            echo '<tr>';
+                                            echo '<th width="40px"></th>';
+                                            echo '<th>Code</th>';
+                                            echo '<th>Libellé</th>';
+                                            echo '<th width="120px" class="text-center">Coefficient</th>';
+                                            echo '<th width="100px" class="text-center">Statut</th>';
+                                            echo '</tr>';
+                                            echo '</thead>';
+                                            echo '<tbody>';
+                                            
+                                            foreach ($ecs_prog as $ec) {
+                                                $ec_status_class = $ec['is_programmed'] ? 'text-success' : 'text-danger';
+                                                $ec_status_text = $ec['is_programmed'] ? '✓ Programmée' : '✗ Déprogrammée';
+                                                
+                                                echo '<tr>';
+                                                echo '<td>';
+                                                echo '<input 
+                                                    class="form-check-input ec-checkbox ec-checkbox-' . $ue['id_ue'] . '" 
+                                                    type="checkbox" 
+                                                    id="ec_' . $ec['id_ec'] . '" 
+                                                    data-ec-id="' . $ec['id_ec'] . '"
+                                                    ' . ($ec['is_programmed'] ? 'checked' : '') . '
+                                                    onchange="toggleEC(this)">';
+                                                echo '</td>';
+                                                echo '<td><code>' . htmlspecialchars($ec['code_ec']) . '</code></td>';
+                                                echo '<td>' . htmlspecialchars($ec['libelle']) . '</td>';
+                                                echo '<td class="text-center"><span class="badge bg-secondary">' . $ec['coefficient'] . '</span></td>';
+                                                echo '<td class="text-center">';
+                                                echo '<small class="' . $ec_status_class . '">' . $ec_status_text . '</small>';
+                                                echo '</td>';
+                                                echo '</tr>';
+                                            }
+                                            
+                                            echo '</tbody>';
+                                            echo '</table>';
+                                            echo '</div>';
+                                            echo '</div>';
+                                        }
+                                        ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="alert alert-info">
+                                    Aucune unité d'enseignement n'existe pour cette promotion et ce semestre.
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-top">
+                            <small class="text-muted">
+                                💡 <strong>Statuts :</strong> Les UEs/ECs programmées (✓) seront visibles pour la saisie des notes.<br>
+                                Les UEs/ECs déprogrammées (✗) ne seront pas utilisées durant cette année académique.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JAVASCRIPT POUR GESTION DES CHECKBOXES -->
+                <script>
+                function toggleUE(checkbox) {
+                    const ueId = checkbox.getAttribute('data-ue-id');
+                    const isProgrammed = checkbox.checked ? 1 : 0;
+                    
+                    fetch('/pages/domaine/ajax/handle_programmation.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            'action': 'toggle_ue',
+                            'id': ueId,
+                            'is_programmed': isProgrammed
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const card = document.querySelector(`input[data-ue-id="${ueId}"]`).closest('.card');
+                            if (card) {
+                                card.classList.remove('border-success', 'border-danger');
+                                card.classList.add(isProgrammed ? 'border-success' : 'border-danger');
+                            }
+                            updateECsForUE(ueId, isProgrammed);
+                        } else {
+                            alert('Erreur : ' + (data.error || 'Impossible de mettre à jour l\'UE'));
+                            checkbox.checked = !checkbox.checked;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur:', error);
+                        alert('Erreur de connexion');
+                        checkbox.checked = !checkbox.checked;
+                    });
+                }
+
+                function toggleEC(checkbox) {
+                    const ecId = checkbox.getAttribute('data-ec-id');
+                    const isProgrammed = checkbox.checked ? 1 : 0;
+                    
+                    fetch('/pages/domaine/ajax/handle_programmation.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            'action': 'toggle_ec',
+                            'id': ecId,
+                            'is_programmed': isProgrammed
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                        } else {
+                            alert('Erreur : ' + (data.error || 'Impossible de mettre à jour l\'EC'));
+                            checkbox.checked = !checkbox.checked;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur:', error);
+                        alert('Erreur de connexion');
+                        checkbox.checked = !checkbox.checked;
+                    });
+                }
+
+                function updateECsForUE(ueId, isProgrammed) {
+                    const ecCheckboxes = document.querySelectorAll(`.ec-checkbox-${ueId}`);
+                    ecCheckboxes.forEach(checkbox => {
+                        if (checkbox.checked !== (isProgrammed === 1)) {
+                            checkbox.checked = (isProgrammed === 1);
+                        }
+                    });
+                }
+
+                function toggleAllUEs(shouldProgram) {
+                    const ueCheckboxes = document.querySelectorAll('.ue-checkbox');
+                    ueCheckboxes.forEach(checkbox => {
+                        if (checkbox.checked !== shouldProgram) {
+                            checkbox.checked = shouldProgram;
+                            toggleUE(checkbox);
+                        }
+                    });
+                }
+                </script>
+
             <?php endif; ?>
         </div>
     </div>
