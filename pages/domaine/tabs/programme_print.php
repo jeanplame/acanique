@@ -33,8 +33,8 @@ try {
             ue.id_ue, ue.code_ue, ue.libelle, ue.heures_th as ue_heures_th, ue.heures_td as ue_heures_td, ue.heures_tp as ue_heures_tp, ue.credits as ue_credits,
             ec.id_ec, ec.code_ec, ec.libelle as ec_libelle, ec.heures_th as ec_heures_th, ec.heures_td as ec_heures_td, ec.heures_tp as ec_heures_tp, ec.coefficient
         FROM t_unite_enseignement ue
-        LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue
-        WHERE ue.id_semestre = ? AND ue.code_promotion = ?
+        LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue AND ec.is_programmed = 1
+        WHERE ue.id_semestre = ? AND ue.code_promotion = ? AND ue.is_programmed = 1
         ORDER BY ue.code_ue ASC, ec.code_ec ASC
     ";
     $stmt_ues = $pdo->prepare($sql_ues);

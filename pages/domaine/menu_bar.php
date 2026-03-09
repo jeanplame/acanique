@@ -53,7 +53,7 @@
                     (SELECT COUNT(DISTINCT ue.id_ue)
                         FROM t_unite_enseignement ue
                         INNER JOIN t_mention_ue mu ON ue.id_ue = mu.id_ue
-                        WHERE mu.id_mention = m.id_mention) as nb_ue,
+                        WHERE mu.id_mention = m.id_mention AND ue.is_programmed = 1) as nb_ue,
                     (SELECT COUNT(DISTINCT i.id_inscription)
                         FROM t_inscription i
                         WHERE i.id_mention = m.id_mention

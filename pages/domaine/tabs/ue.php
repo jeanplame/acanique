@@ -24,51 +24,21 @@ $promotion_code = isset($_GET['promotion']) ? htmlspecialchars($_GET['promotion'
 $id_semestre = isset($_GET['semestre']) ? (int) $_GET['semestre'] : null;
 $id_ue = isset($_GET['id_ue']) ? (int) $_GET['id_ue'] : null; // Nouvel identifiant pour l'UE
 
-// Vérifier si le semestre est sélectionné. Si ce n'est pas le cas, on tente de le trouver.
-if (empty($id_semestre)) {
-    // Si l'année académique n'est pas définie, afficher une erreur
-    if (!$id_annee) {
-        echo '<div class="alert alert-danger">Aucune année académique configurée. Veuillez contacter l\'administrateur.</div>';
-        return;
-    }
+// Vérification de l'année académique
+if (!$id_annee) {
+    echo '<div class="alert alert-danger">Aucune année académique configurée. Veuillez contacter l\'administrateur.</div>';
+    return;
+}
 
-    // Si une année académique est trouvée, on récupère les semestres associés
-    $sql_semestres = "
-            SELECT id_semestre, nom_semestre FROM t_semestre
-            WHERE id_annee = ?
-            ORDER BY nom_semestre ASC
-        ";
-    $stmt_semestres = $pdo->prepare($sql_semestres);
-    $stmt_semestres->execute([$id_annee]);
-    $semestres = $stmt_semestres->fetchAll(PDO::FETCH_ASSOC);
+// Récupérer TOUJOURS les semestres disponibles pour l'année académique
+$sql_semestres = "SELECT id_semestre, nom_semestre FROM t_semestre WHERE id_annee = ? ORDER BY nom_semestre ASC";
+$stmt_semestres = $pdo->prepare($sql_semestres);
+$stmt_semestres->execute([$id_annee]);
+$semestres = $stmt_semestres->fetchAll(PDO::FETCH_ASSOC);
 
-    if (!empty($semestres)) {
-        // Afficher une alerte et une liste déroulante pour choisir le semestre
-        echo '<div class="alert alert-warning">
-                      Veuillez sélectionner un semestre pour la promotion <strong>' . htmlspecialchars($promotion_code) . '</strong>.
-                  </div>';
-        echo '<form class="mb-3" method="GET" action="">';
-        echo '<input type="hidden" name="page" value="domaine">';
-        echo '<input type="hidden" name="action" value="view">';
-        echo '<input type="hidden" name="id" value="' . $id_domaine . '">';
-        echo '<input type="hidden" name="mention" value="' . $mention_id . '">';
-        echo '<input type="hidden" name="promotion" value="' . $promotion_code . '">';
-        echo '<input type="hidden" name="annee" value="' . $id_annee . '">';
-        echo '<input type="hidden" name="tab" value="ue">';
-        echo '<div class="form-group">';
-        echo '<label for="semestre_select">Sélectionner un semestre :</label>';
-        echo '<select class="form-control" id="semestre_select" name="semestre" onchange="this.form.submit()">';
-        echo '<option value="">-- Choisir un semestre --</option>';
-        foreach ($semestres as $semestre) {
-            echo '<option value="' . $semestre['id_semestre'] . '">' . htmlspecialchars($semestre['nom_semestre']) . '</option>';
-        }
-        echo '</select>';
-        echo '</div>';
-        echo '</form>';
-    } else {
-        echo '<div class="alert alert-info">Aucun semestre n\'a été trouvé pour l\'année académique en cours.</div>';
-    }
-
+if (empty($semestres)) {
+    echo '<div class="alert alert-info">Aucun semestre n\'a été trouvé pour l\'année académique en cours.</div>';
+    return;
 }
 
 // =========================
@@ -189,8 +159,70 @@ if ($ue_sub_tab === 'gerer_ec' && $_SERVER['REQUEST_METHOD'] === 'POST' && !empt
 
 ?>
 
+<!-- ============================================ -->
+<!-- SÉLECTEUR DE SEMESTRE PERSISTANT            -->
+<!-- ============================================ -->
+<div class="card mb-3 shadow-sm">
+    <div class="card-body py-2">
+        <div class="row align-items-center">
+            <div class="col-auto">
+                <label for="semestre_select" class="col-form-label fw-bold mb-0">
+                    <i class="fas fa-calendar-alt me-1"></i> Semestre :
+                </label>
+            </div>
+            <div class="col-md-4">
+                <select class="form-select" id="semestre_select" onchange="changeSemestre(this.value)">
+                    <option value="">-- Choisir un semestre --</option>
+                    <?php foreach ($semestres as $sem): ?>
+                        <option value="<?php echo $sem['id_semestre']; ?>" <?php echo ($id_semestre == $sem['id_semestre']) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($sem['nom_semestre']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php if ($id_semestre): ?>
+                <div class="col-auto">
+                    <?php
+                    $nom_semestre_actif = '';
+                    foreach ($semestres as $sem) {
+                        if ($sem['id_semestre'] == $id_semestre) {
+                            $nom_semestre_actif = $sem['nom_semestre'];
+                            break;
+                        }
+                    }
+                    ?>
+                    <span class="badge bg-success fs-6">
+                        <i class="fas fa-check-circle me-1"></i> <?php echo htmlspecialchars($nom_semestre_actif); ?>
+                    </span>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
 
-<div class="card mt-4">
+<script>
+function changeSemestre(idSemestre) {
+    if (!idSemestre) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('semestre', idSemestre);
+    // Garder le sub_tab actuel sauf gerer_ec (qui dépend d'un id_ue spécifique)
+    const currentSubTab = params.get('sub_tab');
+    if (currentSubTab === 'gerer_ec') {
+        params.set('sub_tab', 'liste');
+        params.delete('id_ue');
+    }
+    window.location.search = params.toString();
+}
+</script>
+
+<?php if (empty($id_semestre)): ?>
+    <div class="alert alert-warning text-center">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        Veuillez sélectionner un semestre ci-dessus pour afficher les unités d'enseignement.
+    </div>
+<?php else: ?>
+
+<div class="card mt-0">
     <!-- Onglets pour la gestion des UE -->
     <div class="card-header">
         <ul class="nav nav-tabs card-header-tabs">
@@ -863,13 +895,15 @@ if ($ue_sub_tab === 'gerer_ec' && $_SERVER['REQUEST_METHOD'] === 'POST' && !empt
                         ue.is_programmed,
                         COUNT(ec.id_ec) as nb_ecs
                     FROM t_unite_enseignement ue
+                    INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
                     LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue
                     WHERE ue.code_promotion = ? 
                         AND ue.id_semestre = ?
+                        AND mu.id_mention = ?
                     GROUP BY ue.id_ue
                     ORDER BY ue.code_ue ASC
                 ");
-                $stmt_ues->execute([$promotion_code, $id_semestre]);
+                $stmt_ues->execute([$promotion_code, $id_semestre, $mention_id]);
                 $ues_prog = $stmt_ues->fetchAll(PDO::FETCH_ASSOC);
                 ?>
 
@@ -1091,3 +1125,4 @@ if ($ue_sub_tab === 'gerer_ec' && $_SERVER['REQUEST_METHOD'] === 'POST' && !empt
         </div>
     </div>
 </div>
+<?php endif; ?>

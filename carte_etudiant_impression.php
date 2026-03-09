@@ -94,6 +94,7 @@ if ($annee_academique_courante) {
                       JOIN t_element_constitutif ec ON c.id_ec = ec.id_ec
                       JOIN t_unite_enseignement ue ON ec.id_ue = ue.id_ue
                       WHERE c.matricule = ? AND c.id_annee = ?
+                      AND ue.is_programmed = 1 AND ec.is_programmed = 1
                       ORDER BY ue.libelle, ec.libelle";
     $stmt_notes = $pdo->prepare($sql_notes);
     $stmt_notes->execute([$matricule, $annee_academique_courante]);

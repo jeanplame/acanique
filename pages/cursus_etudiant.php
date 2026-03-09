@@ -51,7 +51,9 @@ try {
                 ec.coefficient AS credits_ec
             FROM t_cote c
             JOIN t_element_constitutif ec ON c.id_ec = ec.id_ec
-            WHERE c.matricule = ? AND c.id_annee = ?";
+            JOIN t_unite_enseignement ue ON ec.id_ue = ue.id_ue
+            WHERE c.matricule = ? AND c.id_annee = ?
+            AND ue.is_programmed = 1 AND ec.is_programmed = 1";
         $stmt_annual_grades = $pdo->prepare($sql_annual_grades);
         $stmt_annual_grades->execute([$matricule, $inscription['id_annee']]);
         $annual_grades = $stmt_annual_grades->fetchAll(PDO::FETCH_ASSOC);

@@ -55,7 +55,7 @@ if ($annee_data) {
 }
 
 // 4. Récupération des détails du cours (EC)
-$stmt_ec = $pdo->prepare("SELECT * FROM t_element_constitutif WHERE id_ec = ?");
+$stmt_ec = $pdo->prepare("SELECT * FROM t_element_constitutif WHERE id_ec = ? AND is_programmed = 1");
 $stmt_ec->execute([$selected_ec_id]);
 $ec_actuel = $stmt_ec->fetch(PDO::FETCH_ASSOC);
 

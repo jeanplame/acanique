@@ -228,6 +228,7 @@ try {
                     AND id_annee = ?
                     GROUP BY id_ec
                 ) last_notes ON c.id_note = last_notes.dernier_id
+                WHERE ue.is_programmed = 1 AND ec.is_programmed = 1
                 ORDER BY ue.libelle, ec.libelle
             ";
             $stmt_notes = $pdo->prepare($sql_notes);

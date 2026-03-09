@@ -131,8 +131,8 @@ $nom_complet = isset($_SESSION['nom_complet']) ? htmlspecialchars($_SESSION['nom
             FROM t_mention m 
             INNER JOIN t_filiere f ON m.idFiliere = f.idFiliere
             LEFT JOIN t_mention_ue mu ON m.id_mention = mu.id_mention
-            LEFT JOIN t_unite_enseignement ue ON mu.id_ue = ue.id_ue
-            LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue
+            LEFT JOIN t_unite_enseignement ue ON mu.id_ue = ue.id_ue AND ue.is_programmed = 1
+            LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue AND ec.is_programmed = 1
             LEFT JOIN t_inscription i ON m.id_mention = i.id_mention
                 AND i.id_annee = ?
         ";

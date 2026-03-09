@@ -485,7 +485,97 @@ foreach ($ues as $codeUE => $ue) {
     }
 }
 
+// ================================================
+// GESTION DE LA GRILLE SPÉCIALE
+// ================================================
+$mode_grille_speciale = false;
+$selected_matricules = [];
+$selected_ue_ec_keys = [];
 
+if (isset($_POST['grille_speciale']) && $_POST['grille_speciale'] === '1') {
+    $mode_grille_speciale = true;
+    
+    // Récupérer les étudiants sélectionnés
+    $selected_matricules = $_POST['selected_etudiants'] ?? [];
+    // Récupérer les UE/EC sélectionnés (format: "UE_codeUE" ou "EC_codeUE_codeEC")
+    $selected_ue_ec_keys = $_POST['selected_ue_ec'] ?? [];
+    
+    // Valider et filtrer les étudiants
+    if (!empty($selected_matricules)) {
+        $etudiants = array_filter($etudiants, function($key) use ($selected_matricules) {
+            return in_array($key, $selected_matricules);
+        }, ARRAY_FILTER_USE_KEY);
+    }
+    
+    // Filtrer les UEs/ECs sélectionnés dans ues_s1 et ues_s2
+    if (!empty($selected_ue_ec_keys)) {
+        $filtered_ues_s1 = [];
+        foreach ($ues_s1 as $codeUE => $ue) {
+            $filtered_ecs = [];
+            foreach ($ue['ecs'] as $codeEC => $ec) {
+                $ec_key = "EC_{$codeUE}_{$codeEC}";
+                $ue_key = "UE_{$codeUE}";
+                if (in_array($ec_key, $selected_ue_ec_keys) || in_array($ue_key, $selected_ue_ec_keys)) {
+                    $filtered_ecs[$codeEC] = $ec;
+                }
+            }
+            if (!empty($filtered_ecs)) {
+                $filtered_ues_s1[$codeUE] = $ue;
+                $filtered_ues_s1[$codeUE]['ecs'] = $filtered_ecs;
+                // Recalculer les crédits
+                $credits = 0;
+                foreach ($filtered_ecs as $ec) {
+                    if (!empty($ec['is_ue_sans_ec'])) {
+                        $credits += $ec['credits'] ?? 0;
+                    } else {
+                        $credits += $ec['coef'] ?? 1;
+                    }
+                }
+                $filtered_ues_s1[$codeUE]['credits'] = $credits;
+            }
+        }
+        $ues_s1 = $filtered_ues_s1;
+        
+        $filtered_ues_s2 = [];
+        foreach ($ues_s2 as $codeUE => $ue) {
+            $filtered_ecs = [];
+            foreach ($ue['ecs'] as $codeEC => $ec) {
+                $ec_key = "EC_{$codeUE}_{$codeEC}";
+                $ue_key = "UE_{$codeUE}";
+                if (in_array($ec_key, $selected_ue_ec_keys) || in_array($ue_key, $selected_ue_ec_keys)) {
+                    $filtered_ecs[$codeEC] = $ec;
+                }
+            }
+            if (!empty($filtered_ecs)) {
+                $filtered_ues_s2[$codeUE] = $ue;
+                $filtered_ues_s2[$codeUE]['ecs'] = $filtered_ecs;
+                $credits = 0;
+                foreach ($filtered_ecs as $ec) {
+                    if (!empty($ec['is_ue_sans_ec'])) {
+                        $credits += $ec['credits'] ?? 0;
+                    } else {
+                        $credits += $ec['coef'] ?? 1;
+                    }
+                }
+                $filtered_ues_s2[$codeUE]['credits'] = $credits;
+            }
+        }
+        $ues_s2 = $filtered_ues_s2;
+    }
+}
+
+// Sauvegarder les données complètes pour le modal de sélection
+$all_etudiants_for_modal = [];
+foreach ($structure as $row) {
+    $mat = $row['matricule'];
+    if (!isset($all_etudiants_for_modal[$mat])) {
+        $all_etudiants_for_modal[$mat] = $row['nom_complet'];
+    }
+}
+ksort($all_etudiants_for_modal);
+
+// Sauvegarder toutes les UEs/ECs pour le modal
+$all_ues_for_modal = $ues;
 
 // Fonctions de calcul
 
@@ -863,6 +953,23 @@ function calcTotalCredits($ues)
     <!-- Séparateur visuel pour les PV -->
     <div style="border-left: 3px solid #ddd; height: 40px; margin: 0 15px;"></div>
 
+    <!-- Bouton Grille Spéciale -->
+    <button onclick="openGrilleSpecialeModal()"
+        style="background-color: #6f42c1; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; transition: background-color 0.2s;">
+        <i class="bi bi-grid-3x3-gap-fill"></i> Grille Spéciale
+    </button>
+    
+    <?php if ($mode_grille_speciale): ?>
+    <!-- Bouton pour revenir à la grille normale -->
+    <a href="?page=domaine&action=view&id=<?php echo htmlspecialchars($id_domaine); ?>&mention=<?php echo htmlspecialchars($id_mention); ?>&tab=notes&promotion=<?php echo htmlspecialchars($code_promo); ?>&tabnotes=deliberation&semestre=<?php echo htmlspecialchars($semestre_filter); ?><?php echo $mode_rattrapage ? '&rattrapage=1' : ''; ?>"
+        style="background-color: #17a2b8; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; text-decoration: none; display: inline-block;">
+        <i class="bi bi-arrow-counterclockwise"></i> Grille Normale
+    </a>
+    <?php endif; ?>
+
+    <!-- Séparateur visuel -->
+    <div style="border-left: 3px solid #ddd; height: 40px; margin: 0 15px;"></div>
+
     <!-- Bouton pour imprimer le PV de délibération (annuel uniquement) -->
     <?php
     $pvUrl = "pages/domaine/tabs/imprimer_pv_deliberation.php?mention=" . urlencode($id_mention) .
@@ -1023,6 +1130,21 @@ function calcTotalCredits($ues)
 </div>
 <?php endif; ?>
 
+<?php if ($mode_grille_speciale): ?>
+<!-- Bannière Grille Spéciale -->
+<div style="margin-bottom: 15px; padding: 10px; background-color: #e8d5f5; border: 2px solid #6f42c1; border-radius: 5px;">
+    <div style="font-weight: bold; color: #6f42c1; margin-bottom: 5px;">
+        <i class="bi bi-grid-3x3-gap-fill"></i> Mode Grille Spéciale
+    </div>
+    <div style="font-size: 12px; color: #4a2d7a;">
+        <strong><?php echo count($etudiants); ?></strong> étudiant(s) sélectionné(s) — 
+        <strong><?php echo count($ues_s1) + count($ues_s2); ?></strong> UE(s) affichée(s)
+        <br>
+        <em>Cette grille ne contient que les étudiants et les UEs/ECs sélectionnés.</em>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="grille_deliberation">
     <table>
         <!-- En-tête générale -->
@@ -1036,7 +1158,11 @@ function calcTotalCredits($ues)
                 <div class="entete-texte">FILIERE : <?php echo $filiere; ?></div>
                 <div class="entete-texte">MENTION : <?php echo $mention ?></div>
                 <div class="entete-texte">
-                    Grille de délibération
+                    <?php if ($mode_grille_speciale): ?>
+                        Grille Spéciale de délibération
+                    <?php else: ?>
+                        Grille de délibération
+                    <?php endif; ?>
                     <?php if ($mode_rattrapage): ?>
                         <span style="color: #000000ff; font-weight: bold;"> - SESSION DE RATTRAPAGE</span>
                     <?php else: ?>
@@ -1741,4 +1867,237 @@ function calcTotalCredits($ues)
         win.close();
         document.body.innerHTML = originalContents;
     }
+</script>
+
+<!-- ================================================ -->
+<!-- MODAL GRILLE SPÉCIALE -->
+<!-- ================================================ -->
+<div id="modalGrilleSpeciale" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; overflow-y:auto;">
+    <div style="background:#fff; margin:30px auto; max-width:1000px; border-radius:10px; box-shadow:0 5px 30px rgba(0,0,0,0.3); overflow:hidden;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #6f42c1, #9b59b6); color:#fff; padding:20px 25px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h4 style="margin:0; font-size:20px;"><i class="bi bi-grid-3x3-gap-fill"></i> Configuration de la Grille Spéciale</h4>
+                <small>Sélectionnez les étudiants et les UEs/ECs à inclure dans la grille</small>
+            </div>
+            <button onclick="closeGrilleSpecialeModal()" style="background:none; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1;">&times;</button>
+        </div>
+        
+        <form method="POST" id="formGrilleSpeciale" action="?page=domaine&action=view&id=<?php echo htmlspecialchars($id_domaine); ?>&mention=<?php echo htmlspecialchars($id_mention); ?>&tab=notes&promotion=<?php echo htmlspecialchars($code_promo); ?>&tabnotes=deliberation&semestre=<?php echo htmlspecialchars($semestre_filter); ?><?php echo $mode_rattrapage ? '&rattrapage=1' : ''; ?>&annee=<?php echo htmlspecialchars($id_annee); ?>">
+            <input type="hidden" name="grille_speciale" value="1">
+            
+            <div style="padding: 20px 25px;">
+                <!-- Section UE/EC -->
+                <div style="margin-bottom: 25px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h5 style="margin:0; color:#6f42c1;"><i class="bi bi-book"></i> Sélection des UEs / ECs</h5>
+                        <div>
+                            <button type="button" onclick="toggleAllUeEc(true)" style="background:#6f42c1; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer; font-size:12px; margin-right:5px;">Tout sélectionner</button>
+                            <button type="button" onclick="toggleAllUeEc(false)" style="background:#dc3545; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer; font-size:12px;">Tout désélectionner</button>
+                        </div>
+                    </div>
+                    
+                    <div style="max-height:300px; overflow-y:auto; border:1px solid #ddd; border-radius:6px; padding:12px; background:#fafafa;">
+                        <?php 
+                        // Regrouper par semestre pour l'affichage
+                        $modal_ues_by_sem = [1 => [], 2 => []];
+                        foreach ($all_ues_for_modal as $codeUE => $ue) {
+                            foreach ($ue['ecs'] as $codeEC => $ec) {
+                                $sem = $ec['semestre'] ?? 0;
+                                if ($sem === 1 || $sem === 2) {
+                                    if (!isset($modal_ues_by_sem[$sem][$codeUE])) {
+                                        $modal_ues_by_sem[$sem][$codeUE] = [
+                                            'libelle' => $ue['libelle'],
+                                            'credits' => $ue['credits'],
+                                            'ecs' => []
+                                        ];
+                                    }
+                                    $modal_ues_by_sem[$sem][$codeUE]['ecs'][$codeEC] = $ec;
+                                }
+                            }
+                        }
+                        
+                        foreach ([1, 2] as $sem): 
+                            if (empty($modal_ues_by_sem[$sem])) continue;
+                        ?>
+                            <div style="margin-bottom:15px;">
+                                <div style="font-weight:bold; color:#333; margin-bottom:8px; padding:5px 10px; background:#e9ecef; border-radius:4px;">
+                                    <i class="bi bi-calendar"></i> Semestre <?php echo $sem; ?>
+                                </div>
+                                <?php foreach ($modal_ues_by_sem[$sem] as $codeUE => $ue): ?>
+                                    <div style="margin-left:15px; margin-bottom:8px; padding:8px; border-left:3px solid #6f42c1; background:#fff; border-radius:0 4px 4px 0;">
+                                        <div style="font-weight:600; color:#495057; margin-bottom:5px;">
+                                            <?php echo htmlspecialchars($codeUE . ' - ' . $ue['libelle']); ?> 
+                                            <span style="color:#6c757d; font-size:11px;">(<?php echo $ue['credits']; ?> crédits)</span>
+                                        </div>
+                                        <?php 
+                                        $hasMultipleEcs = false;
+                                        foreach ($ue['ecs'] as $codeEC => $ec) {
+                                            if (empty($ec['is_ue_sans_ec']) && $codeEC !== $codeUE) {
+                                                $hasMultipleEcs = true;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        foreach ($ue['ecs'] as $codeEC => $ec):
+                                            $isUeSansEc = !empty($ec['is_ue_sans_ec']);
+                                            $checkKey = $isUeSansEc ? "UE_{$codeUE}" : "EC_{$codeUE}_{$codeEC}";
+                                            $isChecked = $mode_grille_speciale ? in_array($checkKey, $selected_ue_ec_keys) : true;
+                                        ?>
+                                            <div style="margin-left:<?php echo $hasMultipleEcs ? '20px' : '0'; ?>; margin-bottom:3px;">
+                                                <label style="cursor:pointer; display:flex; align-items:center; gap:6px; font-size:13px; color:#555;">
+                                                    <input type="checkbox" name="selected_ue_ec[]" value="<?php echo htmlspecialchars($checkKey); ?>" class="ue-ec-checkbox" <?php echo $isChecked ? 'checked' : ''; ?> style="width:16px; height:16px; accent-color:#6f42c1;">
+                                                    <?php if ($isUeSansEc): ?>
+                                                        <span><?php echo htmlspecialchars($ue['libelle']); ?></span>
+                                                        <span style="color:#6c757d; font-size:11px;">(UE directe)</span>
+                                                    <?php else: ?>
+                                                        <span><?php echo htmlspecialchars($codeEC . ' - ' . ($ec['libelle'] ?? '')); ?></span>
+                                                        <?php if (isset($ec['coef'])): ?>
+                                                            <span style="color:#6c757d; font-size:11px;">(coef: <?php echo $ec['coef']; ?>)</span>
+                                                        <?php endif; ?>
+                                                    <?php endif; ?>
+                                                </label>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                
+                <!-- Section Étudiants -->
+                <div style="margin-bottom: 20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h5 style="margin:0; color:#6f42c1;"><i class="bi bi-people"></i> Sélection des Étudiants</h5>
+                        <div>
+                            <button type="button" onclick="toggleAllEtudiants(true)" style="background:#6f42c1; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer; font-size:12px; margin-right:5px;">Tout sélectionner</button>
+                            <button type="button" onclick="toggleAllEtudiants(false)" style="background:#dc3545; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer; font-size:12px;">Tout désélectionner</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Barre de recherche -->
+                    <div style="margin-bottom:10px;">
+                        <input type="text" id="searchEtudiant" placeholder="Rechercher un étudiant par nom ou matricule..." 
+                            style="width:100%; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px;"
+                            oninput="filterEtudiants(this.value)">
+                    </div>
+                    
+                    <div style="max-height:300px; overflow-y:auto; border:1px solid #ddd; border-radius:6px; padding:12px; background:#fafafa;" id="listeEtudiants">
+                        <?php 
+                        // Trier par nom
+                        $sorted_etudiants = $all_etudiants_for_modal;
+                        asort($sorted_etudiants);
+                        $num = 1;
+                        foreach ($sorted_etudiants as $mat => $nom): 
+                            if (empty($mat) || empty($nom)) continue;
+                            $isChecked = $mode_grille_speciale ? in_array($mat, $selected_matricules) : true;
+                        ?>
+                            <div class="etudiant-item" data-nom="<?php echo htmlspecialchars(strtolower($nom)); ?>" data-mat="<?php echo htmlspecialchars(strtolower($mat)); ?>" style="padding:4px 8px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:8px;">
+                                <label style="cursor:pointer; display:flex; align-items:center; gap:8px; font-size:13px; width:100%; margin:0;">
+                                    <input type="checkbox" name="selected_etudiants[]" value="<?php echo htmlspecialchars($mat); ?>" class="etudiant-checkbox" <?php echo $isChecked ? 'checked' : ''; ?> style="width:16px; height:16px; accent-color:#6f42c1;">
+                                    <span style="color:#6c757d; font-size:11px; min-width:30px;"><?php echo $num++; ?>.</span>
+                                    <span style="color:#333; font-weight:500;"><?php echo htmlspecialchars($nom); ?></span>
+                                    <span style="color:#6c757d; font-size:11px; margin-left:auto;"><?php echo htmlspecialchars($mat); ?></span>
+                                </label>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <div style="margin-top:8px; font-size:12px; color:#6c757d;">
+                        <span id="countEtudiants"><?php echo count($sorted_etudiants); ?></span> étudiant(s) — 
+                        <span id="countSelected"><?php echo count($sorted_etudiants); ?></span> sélectionné(s)
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="padding:15px 25px; background:#f8f9fa; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" onclick="closeGrilleSpecialeModal()" style="background:#6c757d; color:#fff; border:none; padding:10px 25px; border-radius:6px; cursor:pointer; font-size:14px;">
+                    <i class="bi bi-x-circle"></i> Annuler
+                </button>
+                <button type="submit" style="background:linear-gradient(135deg, #6f42c1, #9b59b6); color:#fff; border:none; padding:10px 25px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600;">
+                    <i class="bi bi-grid-3x3-gap-fill"></i> Générer la Grille Spéciale
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openGrilleSpecialeModal() {
+        document.getElementById('modalGrilleSpeciale').style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        updateSelectedCount();
+    }
+    
+    function closeGrilleSpecialeModal() {
+        document.getElementById('modalGrilleSpeciale').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+    
+    // Fermer le modal en cliquant en dehors
+    document.getElementById('modalGrilleSpeciale').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeGrilleSpecialeModal();
+        }
+    });
+    
+    function toggleAllUeEc(checked) {
+        document.querySelectorAll('.ue-ec-checkbox').forEach(function(cb) {
+            cb.checked = checked;
+        });
+    }
+    
+    function toggleAllEtudiants(checked) {
+        document.querySelectorAll('.etudiant-checkbox').forEach(function(cb) {
+            var item = cb.closest('.etudiant-item');
+            if (item && item.style.display !== 'none') {
+                cb.checked = checked;
+            }
+        });
+        updateSelectedCount();
+    }
+    
+    function filterEtudiants(query) {
+        var items = document.querySelectorAll('.etudiant-item');
+        var q = query.toLowerCase().trim();
+        items.forEach(function(item) {
+            var nom = item.getAttribute('data-nom') || '';
+            var mat = item.getAttribute('data-mat') || '';
+            if (q === '' || nom.indexOf(q) !== -1 || mat.indexOf(q) !== -1) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+    
+    function updateSelectedCount() {
+        var checked = document.querySelectorAll('.etudiant-checkbox:checked').length;
+        var el = document.getElementById('countSelected');
+        if (el) el.textContent = checked;
+    }
+    
+    // Mettre à jour le compteur quand on coche/décoche
+    document.querySelectorAll('.etudiant-checkbox').forEach(function(cb) {
+        cb.addEventListener('change', updateSelectedCount);
+    });
+    
+    // Validation du formulaire
+    document.getElementById('formGrilleSpeciale').addEventListener('submit', function(e) {
+        var ueChecked = document.querySelectorAll('.ue-ec-checkbox:checked').length;
+        var etChecked = document.querySelectorAll('.etudiant-checkbox:checked').length;
+        
+        if (ueChecked === 0) {
+            e.preventDefault();
+            alert('Veuillez sélectionner au moins une UE/EC.');
+            return;
+        }
+        if (etChecked === 0) {
+            e.preventDefault();
+            alert('Veuillez sélectionner au moins un étudiant.');
+            return;
+        }
+    });
 </script>

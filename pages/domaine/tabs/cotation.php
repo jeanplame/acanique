@@ -60,7 +60,7 @@ if ($is_ec_selected) {
                 ue.credits
             FROM t_element_constitutif ec
             INNER JOIN t_unite_enseignement ue ON ec.id_ue = ue.id_ue
-            WHERE ec.id_ec = ? LIMIT 1
+            WHERE ec.id_ec = ? AND ue.is_programmed = 1 AND ec.is_programmed = 1 LIMIT 1
         ");
         $stmt_fallback->execute([$selected_ec_id]);
         $selected_item = $stmt_fallback->fetch(PDO::FETCH_ASSOC);
@@ -80,7 +80,7 @@ if ($is_ec_selected) {
                 libelle as libelle_ue,
                 credits
             FROM t_unite_enseignement
-            WHERE id_ue = ? LIMIT 1
+            WHERE id_ue = ? AND is_programmed = 1 LIMIT 1
         ");
         $stmt_fallback->execute([$selected_ue_id]);
         $selected_item = $stmt_fallback->fetch(PDO::FETCH_ASSOC);
