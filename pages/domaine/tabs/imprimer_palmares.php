@@ -432,12 +432,17 @@ while ($row = $stmtEtudiants->fetch(PDO::FETCH_ASSOC)) {
     $infos_etudiants[$row['matricule']] = $row;
 }
 
+// Calculer le total des crédits prévus (depuis les vrais crédits UE de la base)
+$totalCreditsPrevus = 0;
+foreach ($ues as $codeUE => $ue) {
+    $totalCreditsPrevus += $ue['credits'];
+}
+
 // Calculer palmarès (LOGIQUE EXACTE de deliberation.php)
 $palmares = [];
 foreach ($etudiants as $mat => $data) {
     // S1
     $totalS1 = 0;
-    $creditsS1 = 0;
     $totalCoefS1 = 0;
     foreach ($ues_s1 as $codeUE => $ue) {
         foreach ($ue['ecs'] as $codeEC => $ec) {
@@ -449,23 +454,30 @@ foreach ($etudiants as $mat => $data) {
             }
         }
     }
+    // Crédits validés S1 : moyenne pondérée de l'UE = somme(note_ec * coef_ec) / credits_ue >= 10
+    $creditsS1 = 0;
     foreach ($ues_s1 as $codeUE => $ue) {
-        $ueValidee = false;
+        $totalPondereUE = 0;
+        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
+        $aDesNotes = false;
         foreach ($ue['ecs'] as $codeEC => $ec) {
             $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
-            if ($val !== null && $val > 0 && $val >= 10) {
-                $ueValidee = true;
-                break;
+            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
+            if ($val !== null && is_numeric($val) && $val > 0) {
+                $totalPondereUE += $val * $coef;
+                $aDesNotes = true;
             }
         }
-        if ($ueValidee) {
-            $creditsS1 += $ue['credits'];
+        if ($aDesNotes && $creditsUE > 0) {
+            $moyenneUE = $totalPondereUE / $creditsUE;
+            if ($moyenneUE >= 10) {
+                $creditsS1 += $creditsUE;
+            }
         }
     }
 
     // S2
     $totalS2 = 0;
-    $creditsS2 = 0;
     $totalCoefS2 = 0;
     foreach ($ues_s2 as $codeUE => $ue) {
         foreach ($ue['ecs'] as $codeEC => $ec) {
@@ -477,17 +489,25 @@ foreach ($etudiants as $mat => $data) {
             }
         }
     }
+    // Crédits validés S2 : moyenne pondérée de l'UE = somme(note_ec * coef_ec) / credits_ue >= 10
+    $creditsS2 = 0;
     foreach ($ues_s2 as $codeUE => $ue) {
-        $ueValidee = false;
+        $totalPondereUE = 0;
+        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
+        $aDesNotes = false;
         foreach ($ue['ecs'] as $codeEC => $ec) {
             $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
-            if ($val !== null && $val > 0 && $val >= 10) {
-                $ueValidee = true;
-                break;
+            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
+            if ($val !== null && is_numeric($val) && $val > 0) {
+                $totalPondereUE += $val * $coef;
+                $aDesNotes = true;
             }
         }
-        if ($ueValidee) {
-            $creditsS2 += $ue['credits'];
+        if ($aDesNotes && $creditsUE > 0) {
+            $moyenneUE = $totalPondereUE / $creditsUE;
+            if ($moyenneUE >= 10) {
+                $creditsS2 += $creditsUE;
+            }
         }
     }
 
@@ -496,7 +516,7 @@ foreach ($etudiants as $mat => $data) {
     $totalAnnuel = $totalS1 + $totalS2;
     $moyenneAnnuelle = $totalCoefAnnuel > 0 ? $totalAnnuel / $totalCoefAnnuel : 0;
     $creditsValides = $creditsS1 + $creditsS2;
-    $pourcentage = $totalCoefAnnuel > 0 ? ($creditsValides / $totalCoefAnnuel) * 100 : 0;
+    $pourcentage = $totalCreditsPrevus > 0 ? ($creditsValides / $totalCreditsPrevus) * 100 : 0;
 
     // NOUVELLE LOGIQUE: Compter le nombre d'échecs (notes < 10)
     $nombreEchecs = 0;
@@ -536,7 +556,8 @@ foreach ($etudiants as $mat => $data) {
         'nom_complet' => $data['nom'],
         'moyenne' => $moyenneAnnuelle,
         'credits_valides' => $creditsValides,
-        'total_credits' => $totalCoefAnnuel,
+        'total_credits' => $totalCreditsPrevus,
+        'credits_non_valides' => $totalCreditsPrevus - $creditsValides,
         'pourcentage' => $pourcentage,
         'mention' => getMentionLMD($moyenneAnnuelle),
         'code_mention' => getCodeMention($moyenneAnnuelle),
@@ -879,7 +900,9 @@ foreach ($palmares as $resultat) {
                         <th style="width: 80px;">MATRICULE</th>
                         <th style="width: 60px;">NATIONALITÉ</th>
                         <th style="width: 60px;">MOYENNE/20</th>
-                        <th style="width: 60px;">CRÉDITS VALIDÉS</th>
+                        <th style="width: 55px;">CRÉDITS PRÉVUS</th>
+                        <th style="width: 55px;">CRÉDITS VALIDÉS</th>
+                        <th style="width: 55px;">CRÉDITS NON VALIDÉS</th>
                         <th style="width: 70px;">DÉCISION JURY</th>
                     </tr>
                 </thead>
@@ -901,7 +924,9 @@ foreach ($palmares as $resultat) {
                             <td class="center"><?= htmlspecialchars($resultat['matricule']) ?></td>
                             <td class="center"><?= htmlspecialchars($resultat['nationalite']) ?></td>
                             <td class="number"><?= number_format($resultat['moyenne'], 2) ?></td>
+                            <td class="center"><?= number_format($resultat['total_credits'], 0) ?></td>
                             <td class="center"><?= number_format($resultat['credits_valides'], 0) ?></td>
+                            <td class="center"><?= number_format($resultat['credits_non_valides'], 0) ?></td>
                             <td class="center <?= $decision_class ?>"><?= $resultat['decision'] ?></td>
                         </tr>
                     <?php endforeach; ?>

@@ -491,15 +491,39 @@ foreach ($ues as $codeUE => $ue) {
 $mode_grille_speciale = false;
 $selected_matricules = [];
 $selected_ue_ec_keys = [];
+$grille_speciale_id = null;
+$grille_speciale_titre = '';
 
-if (isset($_POST['grille_speciale']) && $_POST['grille_speciale'] === '1') {
+// Charger une grille sauvegardée depuis la base de données
+if (isset($_GET['grille_id']) && is_numeric($_GET['grille_id'])) {
+    try {
+        $stmtGS = $pdo->prepare("SELECT * FROM t_grille_speciale WHERE id = ?");
+        $stmtGS->execute([intval($_GET['grille_id'])]);
+        $grilleSauvegardee = $stmtGS->fetch(PDO::FETCH_ASSOC);
+        if ($grilleSauvegardee) {
+            $mode_grille_speciale = true;
+            $grille_speciale_id = $grilleSauvegardee['id'];
+            $grille_speciale_titre = $grilleSauvegardee['titre'];
+            $selected_matricules = json_decode($grilleSauvegardee['selected_matricules'], true) ?: [];
+            $selected_ue_ec_keys = json_decode($grilleSauvegardee['selected_ue_ec_keys'], true) ?: [];
+        }
+    } catch (PDOException $e) {
+        // Table n'existe pas encore ou autre erreur — ignorer silencieusement
+    }
+}
+
+// OU : grille temporaire via POST
+if (!$mode_grille_speciale && isset($_POST['grille_speciale']) && $_POST['grille_speciale'] === '1') {
     $mode_grille_speciale = true;
     
     // Récupérer les étudiants sélectionnés
     $selected_matricules = $_POST['selected_etudiants'] ?? [];
     // Récupérer les UE/EC sélectionnés (format: "UE_codeUE" ou "EC_codeUE_codeEC")
     $selected_ue_ec_keys = $_POST['selected_ue_ec'] ?? [];
-    
+}
+
+// Appliquer le filtrage commun (que la grille vienne de POST ou de la DB)
+if ($mode_grille_speciale) {
     // Valider et filtrer les étudiants
     if (!empty($selected_matricules)) {
         $etudiants = array_filter($etudiants, function($key) use ($selected_matricules) {
@@ -522,16 +546,6 @@ if (isset($_POST['grille_speciale']) && $_POST['grille_speciale'] === '1') {
             if (!empty($filtered_ecs)) {
                 $filtered_ues_s1[$codeUE] = $ue;
                 $filtered_ues_s1[$codeUE]['ecs'] = $filtered_ecs;
-                // Recalculer les crédits
-                $credits = 0;
-                foreach ($filtered_ecs as $ec) {
-                    if (!empty($ec['is_ue_sans_ec'])) {
-                        $credits += $ec['credits'] ?? 0;
-                    } else {
-                        $credits += $ec['coef'] ?? 1;
-                    }
-                }
-                $filtered_ues_s1[$codeUE]['credits'] = $credits;
             }
         }
         $ues_s1 = $filtered_ues_s1;
@@ -549,15 +563,6 @@ if (isset($_POST['grille_speciale']) && $_POST['grille_speciale'] === '1') {
             if (!empty($filtered_ecs)) {
                 $filtered_ues_s2[$codeUE] = $ue;
                 $filtered_ues_s2[$codeUE]['ecs'] = $filtered_ecs;
-                $credits = 0;
-                foreach ($filtered_ecs as $ec) {
-                    if (!empty($ec['is_ue_sans_ec'])) {
-                        $credits += $ec['credits'] ?? 0;
-                    } else {
-                        $credits += $ec['coef'] ?? 1;
-                    }
-                }
-                $filtered_ues_s2[$codeUE]['credits'] = $credits;
             }
         }
         $ues_s2 = $filtered_ues_s2;
@@ -901,6 +906,9 @@ function calcTotalCredits($ues)
             <input type="hidden" name="promotion" value="<?php echo htmlspecialchars($code_promo); ?>">
             <input type="hidden" name="tabnotes" value="deliberation">
             <input type="hidden" name="semestre" value="<?php echo htmlspecialchars($val); ?>">
+            <input type="hidden" name="annee" value="<?php echo htmlspecialchars($id_annee); ?>">
+            <?php if ($mode_rattrapage): ?><input type="hidden" name="rattrapage" value="1"><?php endif; ?>
+            <?php if ($grille_speciale_id): ?><input type="hidden" name="grille_id" value="<?php echo $grille_speciale_id; ?>"><?php endif; ?>
             <button type="submit"><?php echo htmlspecialchars($label); ?></button>
         </form>
     <?php endforeach; ?>
@@ -931,6 +939,8 @@ function calcTotalCredits($ues)
             <input type="hidden" name="tabnotes" value="deliberation">
             <input type="hidden" name="semestre" value="<?php echo htmlspecialchars($_GET['semestre'] ?? ''); ?>">
             <input type="hidden" name="rattrapage" value="<?php echo htmlspecialchars($mode['value']); ?>">
+            <input type="hidden" name="annee" value="<?php echo htmlspecialchars($id_annee); ?>">
+            <?php if ($grille_speciale_id): ?><input type="hidden" name="grille_id" value="<?php echo $grille_speciale_id; ?>"><?php endif; ?>
             <button type="submit" style="background-color: <?php echo $bg_color; ?>; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; margin-right: 5px;">
                 <?php echo htmlspecialchars($mode['label']); ?>
                 <?php if ($is_active): ?>
@@ -958,11 +968,24 @@ function calcTotalCredits($ues)
         style="background-color: #6f42c1; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; transition: background-color 0.2s;">
         <i class="bi bi-grid-3x3-gap-fill"></i> Grille Spéciale
     </button>
+
+    <!-- Bouton Grilles Sauvegardées -->
+    <button onclick="openGrillesSauvegardeesModal()"
+        style="background-color: #17a2b8; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; transition: background-color 0.2s;">
+        <i class="bi bi-archive"></i> Grilles Sauvegardées
+    </button>
     
     <?php if ($mode_grille_speciale): ?>
+    <!-- Bouton Enregistrer la grille courante -->
+    <?php if (!$grille_speciale_id): ?>
+    <button onclick="openSaveGrilleModal()"
+        style="background-color: #28a745; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; transition: background-color 0.2s;">
+        <i class="bi bi-save"></i> Enregistrer cette grille
+    </button>
+    <?php endif; ?>
     <!-- Bouton pour revenir à la grille normale -->
-    <a href="?page=domaine&action=view&id=<?php echo htmlspecialchars($id_domaine); ?>&mention=<?php echo htmlspecialchars($id_mention); ?>&tab=notes&promotion=<?php echo htmlspecialchars($code_promo); ?>&tabnotes=deliberation&semestre=<?php echo htmlspecialchars($semestre_filter); ?><?php echo $mode_rattrapage ? '&rattrapage=1' : ''; ?>"
-        style="background-color: #17a2b8; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; text-decoration: none; display: inline-block;">
+    <a href="?page=domaine&action=view&id=<?php echo htmlspecialchars($id_domaine); ?>&mention=<?php echo htmlspecialchars($id_mention); ?>&tab=notes&promotion=<?php echo htmlspecialchars($code_promo); ?>&tabnotes=deliberation&semestre=<?php echo htmlspecialchars($semestre_filter); ?><?php echo $mode_rattrapage ? '&rattrapage=1' : ''; ?>&annee=<?php echo htmlspecialchars($id_annee); ?>"
+        style="background-color: #dc3545; color: #fff; border: none; padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 4px; text-decoration: none; display: inline-block;">
         <i class="bi bi-arrow-counterclockwise"></i> Grille Normale
     </a>
     <?php endif; ?>
@@ -1117,30 +1140,20 @@ function calcTotalCredits($ues)
 <!-- Tableau principal -->
 <!-- ----------------------- -->
 
-<?php if ($mode_rattrapage): ?>
-<!-- Légende pour le mode rattrapage -->
-<div style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 5px;">
-    <div style="font-weight: bold; color: #856404; margin-bottom: 5px;">
-        <i class="bi bi-info-circle"></i> Mode Session de Rattrapage - Légende
-    </div>
-    <div style="font-size: 12px; color: #856404;">
-        <span style="color: #000; font-weight: bold;">Note*</span> = Note de rattrapage (meilleure note entre session normale et rattrapage)<br>
-        <strong>Seuls les étudiants ayant des notes de rattrapage sont affichés</strong>
-    </div>
-</div>
-<?php endif; ?>
+
 
 <?php if ($mode_grille_speciale): ?>
 <!-- Bannière Grille Spéciale -->
 <div style="margin-bottom: 15px; padding: 10px; background-color: #e8d5f5; border: 2px solid #6f42c1; border-radius: 5px;">
-    <div style="font-weight: bold; color: #6f42c1; margin-bottom: 5px;">
-        <i class="bi bi-grid-3x3-gap-fill"></i> Mode Grille Spéciale
-    </div>
+    
     <div style="font-size: 12px; color: #4a2d7a;">
         <strong><?php echo count($etudiants); ?></strong> étudiant(s) sélectionné(s) — 
         <strong><?php echo count($ues_s1) + count($ues_s2); ?></strong> UE(s) affichée(s)
-        <br>
-        <em>Cette grille ne contient que les étudiants et les UEs/ECs sélectionnés.</em>
+        <?php if ($grille_speciale_id): ?>
+            — <i class="bi bi-check-circle-fill" style="color:#28a745;"></i> <em>Grille enregistrée</em>
+        <?php else: ?>
+            — <i class="bi bi-exclamation-triangle-fill" style="color:#ffc107;"></i> <em>Grille non enregistrée</em>
+        <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>
@@ -1256,9 +1269,9 @@ function calcTotalCredits($ues)
                         <td class="vertical-text"><?php echo htmlspecialchars($ec['libelle']); ?></td>
                     <?php endforeach; ?>
                 <?php endforeach; ?>
-                <td class="vertical-text" style="background:gray;">Total Notes Pondérées</td>
-                <td class="vertical-text" style="background:gray;">Moyenne Pondérée</td>
-                <td class="vertical-text" style="background:gray; border-right: #000 5px solid;">Crédits S1</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Total Notes Pondérées</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Moyenne Pondérée</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold; border-right: #000 5px solid;">Crédits S1</td>
             <?php endif; ?>
 
             <?php if ($afficher_s2 || $afficher_tous): ?>
@@ -1267,18 +1280,18 @@ function calcTotalCredits($ues)
                         <td class="vertical-text"><?php echo htmlspecialchars($ec['libelle']); ?></td>
                     <?php endforeach; ?>
                 <?php endforeach; ?>
-                <td class="vertical-text" style="background:gray;">Total Notes Pondérées</td>
-                <td class="vertical-text" style="background:gray;">Moyenne Pondérée</td>
-                <td class="vertical-text" style="background:gray; border-right: #000 5px solid;">Crédits S2</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Total Notes Pondérées</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Moyenne Pondérée</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold; border-right: #000 5px solid;">Crédits S2</td>
             <?php endif; ?>
 
             <?php if ($afficher_tous): ?>
-                <td class="vertical-text" style="background:gray;">Moyenne Annuelle</td>
-                <td class="vertical-text" style="background:gray;">Total crédit validés Semestre 1 et 2</td>
-                <td class="vertical-text" style="background:gray;">Total Notes Anneul</td>
-                <td class="vertical-text" style="background:gray;">Pourcentage</td>
-                <td class="vertical-text" style="background:gray;">Mention</td>
-                <td class="vertical-text" style="background:gray;">Décision</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Moyenne Annuelle</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Total crédit validés Semestre 1 et 2</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Total Notes Anneul</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Pourcentage</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Mention</td>
+                <td class="vertical-text" style="background:#bdbdbd; font-weight:bold;">Décision</td>
             <?php endif; ?>
         </tr>
 
@@ -1289,7 +1302,7 @@ function calcTotalCredits($ues)
                 // cellules "20" pour chaque EC / UE
                 foreach ($ues_ref as $ue) {
                     foreach ($ue['ecs'] as $ec) {
-                        echo '<td style="background:gray;">20</td>';
+                        echo '<td style="background:#bdbdbd; font-weight:bold;">20</td>';
                     }
                 }
 
@@ -1309,16 +1322,16 @@ function calcTotalCredits($ues)
                 }
                 $moyPonderee = $totalCoefS1 > 0 ? $maxTotal / $totalCoefS1 : 0;
                 ?>
-                <td style="background:gray;"><?php echo number_format($maxTotal, 0); ?></td>
-                <td style="background:gray;"><?php echo number_format($moyPonderee, 1); ?></td>
-                <td style="background:gray; border-right: #000 5px solid;"><?php echo $totalCoefS1; ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($maxTotal, 0); ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyPonderee, 1); ?></td>
+                <td style="background:#bdbdbd; font-weight:bold; border-right: #000 5px solid;"><?php echo $totalCoefS1; ?></td>
             <?php endif; ?>
 
             <?php if ($afficher_s2 || $afficher_tous):
                 $ues_ref = $ues_s2;
                 foreach ($ues_ref as $ue) {
                     foreach ($ue['ecs'] as $ec) {
-                        echo '<td style="background:gray;">20</td>';
+                        echo '<td style="background:#bdbdbd; font-weight:bold;">20</td>';
                     }
                 }
                 $maxTotalS2 = 0;
@@ -1332,9 +1345,9 @@ function calcTotalCredits($ues)
                 }
                 $moyPondereeS2 = $totalCoefS2 > 0 ? $maxTotalS2 / $totalCoefS2 : 0;
                 ?>
-                <td style="background:gray;"><?php echo number_format($maxTotalS2, 0); ?></td>
-                <td style="background:gray;"><?php echo number_format($moyPondereeS2, 1); ?></td>
-                <td style="background:gray; border-right: #000 5px solid;"><?php echo $totalCoefS2; ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($maxTotalS2, 0); ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyPondereeS2, 1); ?></td>
+                <td style="background:#bdbdbd; font-weight:bold; border-right: #000 5px solid;"><?php echo $totalCoefS2; ?></td>
             <?php endif; ?>
 
             <?php if ($afficher_tous):
@@ -1351,17 +1364,17 @@ function calcTotalCredits($ues)
                 $maxTotalNotesAnnuel = $maxTotal + $maxTotalS2;
                 $moyenneAnnuelleMax = 20;
                 ?>
-                <td style="background:gray;"><?php echo number_format($moyenneAnnuelleMax, 1); ?></td>
-                <td style="background:gray;"><?php echo $totalCoefAnnuel; ?></td>
-                <td style="background:gray;"><?php echo $maxTotalNotesAnnuel; ?></td>
-                <td style="background:gray;">100</td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyenneAnnuelleMax, 1); ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo $totalCoefAnnuel; ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;"><?php echo $maxTotalNotesAnnuel; ?></td>
+                <td style="background:#bdbdbd; font-weight:bold;">100</td>
                 <td style="background:black;"></td>
                 <td style="border-right: #000 3px solid; background: #000;"></td>
             <?php endif; ?>
         </tr>
 
         <!-- Ligne des coefficients/crédits -->
-        <tr style="background:gray; font-weight: bold;">
+        <tr style="background:#bdbdbd; font-weight:bold; font-weight: bold;">
             <td>N°</td>
             <td>Nom, Postnom et Prénom</td>
 
@@ -1516,26 +1529,32 @@ function calcTotalCredits($ues)
                             }
                         }
                     }
+                    // Crédits validés S1 : moyenne pondérée UE = somme(note_ec * coef_ec) / credits_ue >= 10
                     $creditsS1 = 0;
                     foreach ($ues_s1 as $codeUE => $ue) {
-                        $ueValidee = false;
+                        $totalPondereUE = 0;
+                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
+                        $aDesNotes = false;
                         foreach ($ue['ecs'] as $codeEC => $ec) {
                             $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
-                            // Vérifier que la note existe, est supérieure à 0 et >= 10 (exclure les notes à 0)
-                            if ($val !== null && $val > 0 && $val >= 10) {
-                                $ueValidee = true;
-                                break;
+                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
+                            if ($val !== null && is_numeric($val) && $val > 0) {
+                                $totalPondereUE += $val * $coef;
+                                $aDesNotes = true;
                             }
                         }
-                        if ($ueValidee) {
-                            $creditsS1 += $ue['credits'];
+                        if ($aDesNotes && $creditsUE > 0) {
+                            $moyenneUE = $totalPondereUE / $creditsUE;
+                            if ($moyenneUE >= 10) {
+                                $creditsS1 += $creditsUE;
+                            }
                         }
                     }
                     $moyS1 = $totalCoefS1 > 0 ? $totalS1 / $totalCoefS1 : 0;
                     ?>
-                    <td style="background:gray;"><?php echo number_format($totalS1, 0); ?></td>
-                    <td style="background:gray;"><?php echo number_format($moyS1, 1); ?></td>
-                    <td style="background:gray; border-right: #000 5px solid;"><?php echo $creditsS1; ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($totalS1, 0); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyS1, 1); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold; border-right: #000 5px solid;"><?php echo $creditsS1; ?></td>
 
                 <?php endif; ?>
 
@@ -1643,26 +1662,32 @@ function calcTotalCredits($ues)
                             }
                         }
                     }
+                    // Crédits validés S2 : moyenne pondérée UE = somme(note_ec * coef_ec) / credits_ue >= 10
                     $creditsS2 = 0;
                     foreach ($ues_s2 as $codeUE => $ue) {
-                        $ueValidee = false;
+                        $totalPondereUE = 0;
+                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
+                        $aDesNotes = false;
                         foreach ($ue['ecs'] as $codeEC => $ec) {
                             $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
-                            // Vérifier que la note existe, est supérieure à 0 et >= 10 (exclure les notes à 0)
-                            if (!is_null($val) && $val > 0 && $val >= 10) {
-                                $ueValidee = true;
-                                break;
+                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
+                            if ($val !== null && is_numeric($val) && $val > 0) {
+                                $totalPondereUE += $val * $coef;
+                                $aDesNotes = true;
                             }
                         }
-                        if ($ueValidee) {
-                            $creditsS2 += $ue['credits'];
+                        if ($aDesNotes && $creditsUE > 0) {
+                            $moyenneUE = $totalPondereUE / $creditsUE;
+                            if ($moyenneUE >= 10) {
+                                $creditsS2 += $creditsUE;
+                            }
                         }
                     }
                     $moyS2 = $totalCoefS2 > 0 ? $totalS2 / $totalCoefS2 : 0;
                     ?>
-                    <td style="background:gray;"><?php echo number_format($totalS2, 0); ?></td>
-                    <td style="background:gray;"><?php echo number_format($moyS2, 1); ?></td>
-                    <td style="background:gray; border-right: #000 5px solid;">
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($totalS2, 0); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyS2, 1); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold; border-right: #000 5px solid;">
                         <?php
                         echo $creditsS2;
 
@@ -1712,35 +1737,45 @@ function calcTotalCredits($ues)
                     $creditsValides_S1 = 0;
                     $creditsValides_S2 = 0;
                     
-                    // Calcul des crédits S1 validés
+                    // Calcul des crédits S1 validés : moyenne pondérée UE >= 10
                     foreach ($ues_s1 as $codeUE => $ue) {
-                        $ueValidee = false;
+                        $totalPondereUE = 0;
+                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
+                        $aDesNotes = false;
                         foreach ($ue['ecs'] as $codeEC => $ec) {
                             $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
-                            // Vérifier que la note existe, est supérieure à 0 et >= 10
-                            if ($val !== null && $val > 0 && $val >= 10) {
-                                $ueValidee = true;
-                                break;
+                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
+                            if ($val !== null && is_numeric($val) && $val > 0) {
+                                $totalPondereUE += $val * $coef;
+                                $aDesNotes = true;
                             }
                         }
-                        if ($ueValidee) {
-                            $creditsValides_S1 += $ue['credits'];
+                        if ($aDesNotes && $creditsUE > 0) {
+                            $moyenneUE = $totalPondereUE / $creditsUE;
+                            if ($moyenneUE >= 10) {
+                                $creditsValides_S1 += $creditsUE;
+                            }
                         }
                     }
                     
-                    // Calcul des crédits S2 validés
+                    // Calcul des crédits S2 validés : moyenne pondérée UE >= 10
                     foreach ($ues_s2 as $codeUE => $ue) {
-                        $ueValidee = false;
+                        $totalPondereUE = 0;
+                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
+                        $aDesNotes = false;
                         foreach ($ue['ecs'] as $codeEC => $ec) {
                             $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
-                            // Vérifier que la note existe, est supérieure à 0 et >= 10
-                            if ($val !== null && $val > 0 && $val >= 10) {
-                                $ueValidee = true;
-                                break;
+                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
+                            if ($val !== null && is_numeric($val) && $val > 0) {
+                                $totalPondereUE += $val * $coef;
+                                $aDesNotes = true;
                             }
                         }
-                        if ($ueValidee) {
-                            $creditsValides_S2 += $ue['credits'];
+                        if ($aDesNotes && $creditsUE > 0) {
+                            $moyenneUE = $totalPondereUE / $creditsUE;
+                            if ($moyenneUE >= 10) {
+                                $creditsValides_S2 += $creditsUE;
+                            }
                         }
                     }
 
@@ -1769,12 +1804,12 @@ function calcTotalCredits($ues)
                         $moyAnnPonderee = ($totalS1 + $totalS2) / $totalCoefAnnuel;
                     }
                     ?>
-                    <td style="background:gray;"><?php echo number_format($moyAnnPonderee, 1); ?></td>
-                    <td style="background:gray;"><?php echo $totalCoefAnnuelEtudiant; ?></td>
-                    <td style="background:gray;"><?php echo number_format($totalNotesAnnuel, 0); ?></td>
-                    <td style="background:gray;"><?php echo number_format($pourcent, 1); ?>%</td>
-                    <td style="background:gray;"><?php echo getMention($moyAnnPonderee); ?></td>
-                    <td style="background:gray; border-right: #000 3px solid;">
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyAnnPonderee, 1); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo $totalCoefAnnuelEtudiant; ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($totalNotesAnnuel, 0); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($pourcent, 1); ?>%</td>
+                    <td style="background:#bdbdbd; font-weight:bold;"><?php echo getMention($moyAnnPonderee); ?></td>
+                    <td style="background:#bdbdbd; font-weight:bold; border-right: #000 3px solid;">
                         <?php
                         if ($moyAnnPonderee >= 10) {
                             echo "ADMIS";
@@ -2100,4 +2135,270 @@ function calcTotalCredits($ues)
             return;
         }
     });
+</script>
+
+<!-- ================================================ -->
+<!-- MODAL ENREGISTRER GRILLE SPÉCIALE -->
+<!-- ================================================ -->
+<div id="modalSaveGrille" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; overflow-y:auto;">
+    <div style="background:#fff; margin:80px auto; max-width:500px; border-radius:10px; box-shadow:0 5px 30px rgba(0,0,0,0.3); overflow:hidden;">
+        <div style="background: linear-gradient(135deg, #28a745, #20c997); color:#fff; padding:15px 25px; display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0; font-size:18px;"><i class="bi bi-save"></i> Enregistrer la Grille Spéciale</h4>
+            <button onclick="closeSaveGrilleModal()" style="background:none; border:none; color:#fff; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        <div style="padding:20px 25px;">
+            <div style="margin-bottom:15px;">
+                <label style="font-weight:600; display:block; margin-bottom:5px;">Titre <span style="color:red;">*</span></label>
+                <input type="text" id="saveGrilleTitre" placeholder="Ex: Délibération partielle L2 Info - Mars 2026" 
+                    style="width:100%; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:14px;" maxlength="255">
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="font-weight:600; display:block; margin-bottom:5px;">Description (optionnelle)</label>
+                <textarea id="saveGrilleDescription" placeholder="Notes ou remarques sur cette grille..." rows="3"
+                    style="width:100%; padding:8px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; resize:vertical;"></textarea>
+            </div>
+            <div style="font-size:12px; color:#6c757d; margin-bottom:15px; padding:8px; background:#f8f9fa; border-radius:4px;">
+                <i class="bi bi-info-circle"></i> 
+                Cette grille sera sauvegardée avec la sélection actuelle de 
+                <strong><?php echo count($etudiants); ?></strong> étudiant(s) et 
+                <strong><?php echo count($ues_s1) + count($ues_s2); ?></strong> UE(s).
+            </div>
+        </div>
+        <div style="padding:15px 25px; background:#f8f9fa; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px;">
+            <button onclick="closeSaveGrilleModal()" style="background:#6c757d; color:#fff; border:none; padding:8px 20px; border-radius:6px; cursor:pointer;">Annuler</button>
+            <button onclick="saveGrilleSpeciale()" id="btnSaveGrille" style="background:#28a745; color:#fff; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-weight:600;">
+                <i class="bi bi-save"></i> Enregistrer
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================ -->
+<!-- MODAL GRILLES SAUVEGARDÉES -->
+<!-- ================================================ -->
+<div id="modalGrillesSauvegardees" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; overflow-y:auto;">
+    <div style="background:#fff; margin:50px auto; max-width:800px; border-radius:10px; box-shadow:0 5px 30px rgba(0,0,0,0.3); overflow:hidden;">
+        <div style="background: linear-gradient(135deg, #17a2b8, #138496); color:#fff; padding:15px 25px; display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0; font-size:18px;"><i class="bi bi-archive"></i> Grilles Spéciales Sauvegardées</h4>
+            <button onclick="closeGrillesSauvegardeesModal()" style="background:none; border:none; color:#fff; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        <div style="padding:20px 25px;">
+            <div id="listeGrillesSauvegardees" style="min-height:100px;">
+                <div style="text-align:center; padding:30px; color:#6c757d;">
+                    <i class="bi bi-hourglass-split" style="font-size:24px;"></i><br>
+                    Chargement...
+                </div>
+            </div>
+        </div>
+        <div style="padding:10px 25px; background:#f8f9fa; border-top:1px solid #ddd; text-align:right;">
+            <button onclick="closeGrillesSauvegardeesModal()" style="background:#6c757d; color:#fff; border:none; padding:8px 20px; border-radius:6px; cursor:pointer;">Fermer</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Variables contextuelles pour la sauvegarde
+var gsContexte = {
+    id_annee: <?php echo json_encode($id_annee); ?>,
+    id_mention: <?php echo json_encode($id_mention); ?>,
+    code_promotion: <?php echo json_encode($code_promo); ?>,
+    semestre_filter: <?php echo json_encode($semestre_filter); ?>,
+    mode_rattrapage: <?php echo json_encode($mode_rattrapage ? '1' : '0'); ?>,
+    id_domaine: <?php echo json_encode($id_domaine); ?>,
+    selected_matricules: <?php echo json_encode($selected_matricules); ?>,
+    selected_ue_ec_keys: <?php echo json_encode($selected_ue_ec_keys); ?>
+};
+
+// ============ MODAL ENREGISTRER ============
+function openSaveGrilleModal() {
+    document.getElementById('modalSaveGrille').style.display = 'block';
+    document.getElementById('saveGrilleTitre').value = '';
+    document.getElementById('saveGrilleDescription').value = '';
+    document.getElementById('saveGrilleTitre').focus();
+}
+function closeSaveGrilleModal() {
+    document.getElementById('modalSaveGrille').style.display = 'none';
+}
+
+function saveGrilleSpeciale() {
+    var titre = document.getElementById('saveGrilleTitre').value.trim();
+    var description = document.getElementById('saveGrilleDescription').value.trim();
+    
+    if (!titre) {
+        alert('Veuillez saisir un titre pour la grille.');
+        document.getElementById('saveGrilleTitre').focus();
+        return;
+    }
+
+    var btn = document.getElementById('btnSaveGrille');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Enregistrement...';
+
+    var formData = new FormData();
+    formData.append('action', 'save');
+    formData.append('titre', titre);
+    formData.append('description', description);
+    formData.append('id_annee', gsContexte.id_annee);
+    formData.append('id_mention', gsContexte.id_mention);
+    formData.append('code_promotion', gsContexte.code_promotion);
+    formData.append('semestre_filter', gsContexte.semestre_filter);
+    formData.append('mode_rattrapage', gsContexte.mode_rattrapage);
+    
+    gsContexte.selected_matricules.forEach(function(m) {
+        formData.append('selected_matricules[]', m);
+    });
+    gsContexte.selected_ue_ec_keys.forEach(function(k) {
+        formData.append('selected_ue_ec_keys[]', k);
+    });
+
+    fetch('ajax/grille_speciale_handler.php', { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                alert('Grille enregistrée avec succès !');
+                closeSaveGrilleModal();
+                // Recharger en mode grille sauvegardée
+                var url = new URL(window.location.href);
+                url.searchParams.set('grille_id', data.id);
+                window.location.href = url.toString();
+            } else {
+                alert('Erreur : ' + data.message);
+            }
+        })
+        .catch(function(err) {
+            alert('Erreur réseau : ' + err.message);
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-save"></i> Enregistrer';
+        });
+}
+
+// ============ MODAL GRILLES SAUVEGARDÉES ============
+function openGrillesSauvegardeesModal() {
+    document.getElementById('modalGrillesSauvegardees').style.display = 'block';
+    chargerGrillesSauvegardees();
+}
+function closeGrillesSauvegardeesModal() {
+    document.getElementById('modalGrillesSauvegardees').style.display = 'none';
+}
+
+function chargerGrillesSauvegardees() {
+    var container = document.getElementById('listeGrillesSauvegardees');
+    container.innerHTML = '<div style="text-align:center; padding:30px; color:#6c757d;"><i class="bi bi-hourglass-split" style="font-size:24px;"></i><br>Chargement...</div>';
+
+    var params = new URLSearchParams({
+        action: 'list',
+        id_annee: gsContexte.id_annee,
+        id_mention: gsContexte.id_mention,
+        code_promotion: gsContexte.code_promotion
+    });
+
+    fetch('ajax/grille_speciale_handler.php?' + params.toString())
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                container.innerHTML = '<div style="text-align:center; padding:20px; color:#dc3545;"><i class="bi bi-exclamation-circle"></i> ' + data.message + '</div>';
+                return;
+            }
+            if (data.grilles.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:30px; color:#6c757d;"><i class="bi bi-inbox" style="font-size:32px;"></i><br>Aucune grille spéciale sauvegardée pour cette promotion.</div>';
+                return;
+            }
+
+            var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+            html += '<thead><tr style="background:#f1f3f5; border-bottom:2px solid #dee2e6;">';
+            html += '<th style="padding:8px; text-align:left;">Titre</th>';
+            html += '<th style="padding:8px; text-align:center;">Étudiants</th>';
+            html += '<th style="padding:8px; text-align:center;">UE/EC</th>';
+            html += '<th style="padding:8px; text-align:center;">Session</th>';
+            html += '<th style="padding:8px; text-align:left;">Créé par</th>';
+            html += '<th style="padding:8px; text-align:left;">Date</th>';
+            html += '<th style="padding:8px; text-align:center;">Actions</th>';
+            html += '</tr></thead><tbody>';
+
+            data.grilles.forEach(function(g) {
+                var sessionLabel = g.mode_rattrapage == 1 ? '<span style="color:#ffc107;">Rattrapage</span>' : 'Normale';
+                var semLabel = g.semestre_filter ? 'S' + g.semestre_filter : 'Annuel';
+                var dateStr = new Date(g.date_creation).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'});
+                
+                html += '<tr style="border-bottom:1px solid #eee;">';
+                html += '<td style="padding:8px;"><strong>' + escapeHtml(g.titre) + '</strong>';
+                if (g.description) html += '<br><small style="color:#6c757d;">' + escapeHtml(g.description) + '</small>';
+                html += '</td>';
+                html += '<td style="padding:8px; text-align:center;">' + g.nb_etudiants + '</td>';
+                html += '<td style="padding:8px; text-align:center;">' + g.nb_ue_ec + '</td>';
+                html += '<td style="padding:8px; text-align:center;">' + semLabel + ' / ' + sessionLabel + '</td>';
+                html += '<td style="padding:8px;">' + escapeHtml(g.cree_par) + '</td>';
+                html += '<td style="padding:8px; font-size:11px;">' + dateStr + '</td>';
+                html += '<td style="padding:8px; text-align:center; white-space:nowrap;">';
+                html += '<button onclick="chargerGrille(' + g.id + ')" style="background:#6f42c1; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px; margin-right:4px;" title="Ouvrir"><i class="bi bi-eye"></i> Ouvrir</button>';
+                html += '<button onclick="supprimerGrille(' + g.id + ', this)" style="background:#dc3545; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px;" title="Supprimer"><i class="bi bi-trash"></i></button>';
+                html += '</td>';
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function(err) {
+            container.innerHTML = '<div style="text-align:center; padding:20px; color:#dc3545;"><i class="bi bi-exclamation-circle"></i> Erreur réseau</div>';
+        });
+}
+
+function chargerGrille(id) {
+    var baseUrl = window.location.href.split('?')[0];
+    var params = new URLSearchParams(window.location.search);
+    params.set('grille_id', id);
+    // Supprimer les paramètres POST-related qui ne s'appliquent plus
+    window.location.href = baseUrl + '?' + params.toString();
+}
+
+function supprimerGrille(id, btn) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette grille spéciale ? Cette action est irréversible.')) return;
+    
+    btn.disabled = true;
+    var formData = new FormData();
+    formData.append('action', 'delete');
+    formData.append('id', id);
+
+    fetch('ajax/grille_speciale_handler.php', { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                chargerGrillesSauvegardees();
+                // Si on est en train de voir cette grille, retourner à la grille normale
+                var params = new URLSearchParams(window.location.search);
+                if (params.get('grille_id') == id) {
+                    params.delete('grille_id');
+                    window.location.href = window.location.pathname + '?' + params.toString();
+                }
+            } else {
+                alert('Erreur : ' + data.message);
+                btn.disabled = false;
+            }
+        })
+        .catch(function(err) {
+            alert('Erreur réseau');
+            btn.disabled = false;
+        });
+}
+
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// Fermer les modaux en cliquant en dehors
+['modalSaveGrille', 'modalGrillesSauvegardees'].forEach(function(modalId) {
+    var el = document.getElementById(modalId);
+    if (el) {
+        el.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.style.display = 'none';
+            }
+        });
+    }
+});
 </script>
