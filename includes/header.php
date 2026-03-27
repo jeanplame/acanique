@@ -421,6 +421,9 @@ if (!defined('HEADER_INCLUDED')) {
                             <li><a class="dropdown-item" href="?page=config_annees_academiques">
                                 <i class="bi bi-calendar3 me-1"></i> Années Académiques
                             </a></li>
+                            <li><a class="dropdown-item" href="?page=jury_nomination">
+                                <i class="bi bi-people-fill me-1"></i> Nomination Jury
+                            </a></li>
                             <li><a class="dropdown-item" href="?page=backup_manager">
                                 <i class="bi bi-database-gear me-1"></i> Gestion des Sauvegardes
                             </a></li>

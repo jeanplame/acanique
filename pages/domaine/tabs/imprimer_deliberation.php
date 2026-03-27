@@ -80,14 +80,42 @@ $resultFilieres = $stmtFiliere->fetchAll(PDO::FETCH_ASSOC);
 $id_filiere = $resultFilieres[0]['idFiliere'] ?? null;
 
 // Jointure de récupération du nom de domaine à partir de l'id_domaine de la table filière
-$sqlDomaine = "SELECT d.nom_domaine as domaine 
+$sqlDomaine = "SELECT d.id_domaine, d.nom_domaine as domaine 
                FROM t_domaine d 
                INNER JOIN t_filiere f ON d.id_domaine = f.id_domaine 
                INNER JOIN t_mention m ON f.idFiliere = m.idFiliere 
                WHERE m.id_mention = ?";
 $stmtDomaine = $pdo->prepare($sqlDomaine);
 $stmtDomaine->execute([$id_mention]);
-$domaine = $stmtDomaine->fetchColumn();
+$rowDomaine = $stmtDomaine->fetch(PDO::FETCH_ASSOC);
+$domaine = $rowDomaine['domaine'] ?? '';
+$id_domaine_jury = $rowDomaine['id_domaine'] ?? null;
+
+// Récupération des membres du jury pour ce domaine et cette année
+$jury_president = [];
+$jury_secretaires = [];
+$jury_membres = [];
+if ($id_domaine_jury && $id_annee) {
+    try {
+        $stmtJury = $pdo->prepare("
+            SELECT nom_complet, titre_academique, fonction, role_jury, ordre_affichage
+            FROM t_jury_nomination
+            WHERE id_domaine = :id_domaine AND id_annee = :id_annee
+            ORDER BY FIELD(role_jury, 'president', 'secretaire', 'membre'), ordre_affichage, nom_complet
+        ");
+        $stmtJury->execute([':id_domaine' => $id_domaine_jury, ':id_annee' => $id_annee]);
+        $juryAll = $stmtJury->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($juryAll as $jm) {
+            $label = ($jm['titre_academique'] ? htmlspecialchars($jm['titre_academique']) . ' ' : '') . htmlspecialchars($jm['nom_complet']);
+            if ($jm['fonction']) $label .= '<br><small style="font-weight:normal;font-style:italic;">' . htmlspecialchars($jm['fonction']) . '</small>';
+            if ($jm['role_jury'] === 'president') $jury_president[] = $label;
+            elseif ($jm['role_jury'] === 'secretaire') $jury_secretaires[] = $label;
+            else $jury_membres[] = $label;
+        }
+    } catch (PDOException $e) {
+        error_log("Erreur récupération jury impression: " . $e->getMessage());
+    }
+}
 
 // Organisation des données
 $etudiants = [];
@@ -693,27 +721,48 @@ function getMention($moy)
 </div>
 
 <div style="padding: 10px; border: #000 solid 1px; margin-top: 15px;">
-    <table class="footer" style="border: #000 1px solid !important;">
+    <table class="footer" style="border: #000 1px solid !important; width: 100%;">
         <tr>
-            <td style="border-right: #000 1px solid !important;">
+            <td style="border-right: #000 1px solid !important; font-weight: bold; text-align: center; padding: 8px;">
                 Président du Jury
             </td>
-            <td style="border-right: #000 1px solid !important;">
-                Secrétaire du Jury
+            <td style="border-right: #000 1px solid !important; font-weight: bold; text-align: center; padding: 8px;">
+                Secrétaire(s) du Jury
             </td>
-            <td>
+            <td style="font-weight: bold; text-align: center; padding: 8px;">
                 Membres du Jury
             </td>
         </tr>
         <tr>
-            <td style="height: 200px; border-right: #000 1px solid !important;">
-
+            <td style="min-height: 120px; border-right: #000 1px solid !important; vertical-align: top; padding: 10px; text-align: center;">
+                <?php if (!empty($jury_president)): ?>
+                    <?php foreach ($jury_president as $p): ?>
+                        <div style="margin-bottom: 4px; font-weight: 600;"><?= $p ?></div>
+                        <div style="margin-bottom: 20px; color: #aaa; letter-spacing: 2px;"></div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div style="color: #999; padding-top: 30px;">........................</div>
+                <?php endif; ?>
             </td>
-            <td style="height: 200px; border-right: #000 1px solid !important;">
-
+            <td style="min-height: 120px; border-right: #000 1px solid !important; vertical-align: top; padding: 10px; text-align: center;">
+                <?php if (!empty($jury_secretaires)): ?>
+                    <?php foreach ($jury_secretaires as $s): ?>
+                        <div style="margin-bottom: 4px; font-weight: 600;"><?= $s ?></div>
+                        <div style="margin-bottom: 20px; color: #aaa; letter-spacing: 2px;"></div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div style="color: #999; padding-top: 30px;">........................</div>
+                <?php endif; ?>
             </td>
-            <td>
-
+            <td style="min-height: 120px; vertical-align: top; padding: 10px; text-align: center;">
+                <?php if (!empty($jury_membres)): ?>
+                    <?php foreach ($jury_membres as $m): ?>
+                        <div style="margin-bottom: 4px; font-weight: 600;"><?= $m ?></div>
+                        <div style="margin-bottom: 20px; color: #aaa; letter-spacing: 2px;"></div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div style="color: #999; padding-top: 30px;">........................</div>
+                <?php endif; ?>
             </td>
         </tr>
     </table>

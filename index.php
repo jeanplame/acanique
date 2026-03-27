@@ -166,6 +166,9 @@ switch ($page) {
     case 'config_annees_academiques':
         $page_path = 'pages/config_annees_academiques.php';
         break;
+    case 'jury_nomination':
+        $page_path = 'pages/jury_nomination.php';
+        break;
     
     case 'login':
         $page_path = 'pages/login.php';
@@ -246,6 +249,8 @@ $content = ob_get_clean();
     <link href="css/style.css" rel="stylesheet">
     <link href="css/dashboard.css" rel="stylesheet">
     <link href="css/domaine.css" rel="stylesheet">
+    <link href="css/ai_chat.css" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
 </head>
 <body>
     <?php echo $content; ?>
@@ -259,5 +264,8 @@ $content = ob_get_clean();
     <script src="vendor/daterangepicker/daterangepicker.js"></script>
     <script src="vendor/countdowntime/countdowntime.js"></script>
     <script src="js/main.js"></script>
+<?php if (!empty($_SESSION['user_id'])): ?>
+    <script src="js/ai_chat.js"></script>
+<?php endif; ?>
 </body>
 </html>
