@@ -1,5 +1,5 @@
 <?php
-    header('Content-Type: text/html; charset=UTF-8');
+header('Content-Type: text/html; charset=UTF-8');
 /**
  * Formulaire d'inscription des étudiants
  * Gestion de l'inscription d'un nouvel étudiant avec validation complète
@@ -113,7 +113,6 @@ try {
     $date_fin = $annee['date_fin'];
     $statut = $annee['statut'];
     $annee_libelle = $annee['annee_academique'];
-
 } catch (Exception $e) {
     error_log("Erreur récupération année académique: " . $e->getMessage());
     $error = "Erreur de configuration: Année académique non disponible.";
@@ -299,7 +298,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             header("Location: $redirect_url");
             exit();
-
         } catch (Exception $e) {
             // Annulation de la transaction en cas d'erreur
             $pdo->rollBack();
@@ -307,137 +305,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Erreur lors de l'inscription : " . $e->getMessage();
         }
     }
-
 }
 ?>
 
 <!-- Styles CSS modernes pour le formulaire d'inscription -->
 <link href="../../includes/css/bootstrap-icons.css" rel="stylesheet">
 <script src="../../includes/dist/sweetalert2.all.min.js"></script>
-<style>
-    .card-header-modern {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-        color: white;
-        border-radius: 0.5rem 0.5rem 0 0 !important;
-        border: none;
-    }
 
-    .form-section {
-        background: #f8f9fa;
-        border-radius: 0.5rem;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        border-left: 4px solid #007bff;
-        transition: all 0.3s ease;
-    }
-
-    .form-section:hover {
-        box-shadow: 0 4px 15px rgba(0, 123, 255, 0.1);
-        transform: translateY(-2px);
-    }
-
-    .form-section h5 {
-        color: #007bff;
-        font-weight: 600;
-        margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .form-floating {
-        margin-bottom: 1rem;
-    }
-
-    .form-floating>.form-control:focus~label {
-        color: #007bff;
-    }
-
-    .form-floating>.form-control:focus {
-        border-color: #007bff;
-        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-    }
-
-    .btn-modern-primary {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-        border: none;
-        padding: 0.75rem 2rem;
-        font-weight: 600;
-        border-radius: 0.5rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
-    }
-
-    .btn-modern-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
-    }
-
-    .btn-modern-secondary {
-        background: #6c757d;
-        border: none;
-        padding: 0.75rem 2rem;
-        font-weight: 600;
-        border-radius: 0.5rem;
-        transition: all 0.3s ease;
-    }
-
-    .btn-modern-secondary:hover {
-        background: #5a6268;
-        transform: translateY(-2px);
-    }
-
-    .invalid-feedback {
-        display: block;
-        width: 100%;
-        margin-top: 0.25rem;
-        font-size: 0.875rem;
-        color: #dc3545;
-    }
-
-    .form-control.is-invalid {
-        border-color: #dc3545;
-        box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
-    }
-
-    .progress-bar-modern {
-        height: 4px;
-        background: linear-gradient(90deg, #007bff 0%, #0056b3 100%);
-        border-radius: 2px;
-        margin-bottom: 2rem;
-    }
-
-    @media (max-width: 768px) {
-        .form-section {
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-
-        .btn-modern-primary,
-        .btn-modern-secondary {
-            width: 100%;
-            margin-bottom: 0.5rem;
-        }
-
-        .row.g-3>.col-md-6,
-        .row.g-3>.col-md-4 {
-            margin-bottom: 1rem;
-        }
-    }
-
-
-
-
-    @keyframes spin {
-        0% {
-            transform: rotate(0deg);
-        }
-
-        100% {
-            transform: rotate(360deg);
-        }
-    }
-</style>
 
 
 <!-- Card principale avec design moderne -->
@@ -459,210 +333,365 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
 
-        <!-- Formulaire d'inscription -->
-        <form method="POST" id="inscriptionForm" novalidate>
-            <!-- Token CSRF -->
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-            <input type="hidden" name="annee_academique" value="<?= htmlspecialchars($annee_academique) ?>">
-            <input type="hidden" name="mention_id" value="<?= htmlspecialchars($mention_id) ?>">
-            <input type="hidden" name="promotion_code" value="<?= htmlspecialchars($promotion_code) ?>">
-            <input type="hidden" name="id_filiere" value="<?= htmlspecialchars($id_filiere_form) ?>">
+        <!-- Importation de la police Plus Jakarta Sans pour un rendu ultra-moderne -->
+        <style>
+            /* =========================================
+       DESIGN SYSTEM - FORMULAIRE COMPACT
+       ========================================= */
+            .ultra-compact-wrapper {
+                max-width: 850px;
+                margin: 2rem auto;
+                padding: 2rem;
+                background: #ffffff;
+                border-radius: 8px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            }
 
-            <!-- Section Informations Personnelles -->
-            <div class="form-section">
-                <h5>Informations Personnelles</h5>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['nom_etu']) ? 'is-invalid' : '' ?>"
-                                id="nom_etu" name="nom_etu" placeholder="Nom de famille"
-                                value="<?= htmlspecialchars($_POST['nom_etu'] ?? '') ?>" required maxlength="50">
-                            <label for="nom_etu">Nom de famille *</label>
+            /* Grilles personnalisées pour réduire l'espace */
+            .c-grid-3 {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 12px;
+            }
+
+            .c-grid-2 {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
+
+            .c-grid-1 {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            @media (max-width: 768px) {
+
+                .c-grid-3,
+                .c-grid-2 {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            /* Sections minimalistes avec accent à gauche */
+            .c-section {
+                border-left: 3px solid #e2e8f0;
+                padding-left: 1.25rem;
+                margin-bottom: 2rem;
+            }
+
+            .c-section h5 {
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: #64748b;
+                margin-top: 0;
+                margin-bottom: 1rem;
+                font-weight: 700;
+            }
+
+            /* =========================================
+       NOUVEAUX LABELS FLOTTANTS (Sur-mesure)
+       ========================================= */
+            .c-input-group {
+                position: relative;
+                width: 100%;
+                margin-bottom: 4px;
+            }
+
+            .c-input {
+                width: 100%;
+                box-sizing: border-box;
+                height: 42px;
+                /* Hauteur très compacte */
+                padding: 16px 12px 4px 12px;
+                /* Espace en haut pour le petit label */
+                font-size: 13px;
+                color: #0f172a;
+                background-color: #f8fafc;
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                outline: none;
+                transition: all 0.2s ease;
+            }
+
+            textarea.c-input {
+                height: 80px;
+                resize: vertical;
+            }
+
+            /* Le label par défaut au centre */
+            .c-label {
+                position: absolute;
+                left: 12px;
+                top: 12px;
+                font-size: 13px;
+                color: #94a3b8;
+                pointer-events: none;
+                transition: transform 0.2s ease, font-size 0.2s ease, color 0.2s ease;
+                transform-origin: left top;
+            }
+
+            /* L'animation quand on clique (focus) ou qu'il y a du texte (not placeholder-shown) */
+            .c-input:focus,
+            .c-input:not(:placeholder-shown) {
+                background-color: #ffffff;
+                border-color: #0ea5e9;
+                box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+            }
+
+            .c-input:focus~.c-label,
+            .c-input:not(:placeholder-shown)~.c-label,
+            .c-label.active
+
+            /* Forcé pour les Select/Date */
+                {
+                transform: translateY(-8px);
+                font-size: 10px;
+                color: #0ea5e9;
+                font-weight: 600;
+            }
+
+            /* Gestion des erreurs */
+            .c-input.has-error {
+                border-color: #ef4444;
+                background-color: #fef2f2;
+            }
+
+            .c-input.has-error:focus~.c-label,
+            .c-input.has-error:not(:placeholder-shown)~.c-label {
+                color: #ef4444;
+            }
+
+            .c-error-msg {
+                display: block;
+                font-size: 11px;
+                color: #ef4444;
+                margin-top: 4px;
+                margin-left: 2px;
+            }
+
+            /* Boutons compacts */
+            .c-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 12px;
+                margin-top: 2rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid #f1f5f9;
+            }
+
+            .c-btn {
+                padding: 0 1.25rem;
+                height: 38px;
+                font-size: 13px;
+                font-weight: 600;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s;
+                border: none;
+            }
+
+            .c-btn-reset {
+                background: transparent;
+                color: #64748b;
+                border: 1px solid #cbd5e1;
+            }
+
+            .c-btn-reset:hover {
+                background: #f1f5f9;
+                color: #0f172a;
+            }
+
+            .c-btn-submit {
+                background: #0ea5e9;
+                color: white;
+                box-shadow: 0 2px 4px rgba(14, 165, 233, 0.2);
+            }
+
+            .c-btn-submit:hover {
+                background: #0284c7;
+                box-shadow: 0 4px 8px rgba(14, 165, 233, 0.3);
+            }
+        </style>
+
+        <div class="ultra-compact-wrapper">
+            <form method="POST" id="inscriptionForm" novalidate>
+                <!-- Token CSRF et variables cachées (Inchangés) -->
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+                <input type="hidden" name="annee_academique" value="<?= htmlspecialchars($annee_academique) ?>">
+                <input type="hidden" name="mention_id" value="<?= htmlspecialchars($mention_id) ?>">
+                <input type="hidden" name="promotion_code" value="<?= htmlspecialchars($promotion_code) ?>">
+                <input type="hidden" name="id_filiere" value="<?= htmlspecialchars($id_filiere_form) ?>">
+
+                <!-- Section Informations Personnelles -->
+                <div class="c-section">
+                    <h5>Informations Personnelles</h5>
+
+                    <div class="c-grid-3">
+                        <div class="c-input-group">
+                            <!-- IMPORTANT : Le placeholder=" " (avec espace) est vital pour faire fonctionner le label flottant purement en CSS -->
+                            <input type="text" id="nom_etu" name="nom_etu" placeholder=" " required maxlength="50"
+                                class="c-input <?= isset($validation_errors['nom_etu']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['nom_etu'] ?? '') ?>">
+                            <label for="nom_etu" class="c-label">Nom de famille *</label>
                             <?php if (isset($validation_errors['nom_etu'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['nom_etu']) ?></div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['nom_etu']) ?></span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['postnom_etu']) ? 'is-invalid' : '' ?>"
-                                id="postnom_etu" name="postnom_etu" placeholder="Post-nom"
-                                value="<?= htmlspecialchars($_POST['postnom_etu'] ?? '') ?>" required maxlength="50">
-                            <label for="postnom_etu">Post-nom *</label>
+
+                        <div class="c-input-group">
+                            <input type="text" id="postnom_etu" name="postnom_etu" placeholder=" " required maxlength="50"
+                                class="c-input <?= isset($validation_errors['postnom_etu']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['postnom_etu'] ?? '') ?>">
+                            <label for="postnom_etu" class="c-label">Post-nom *</label>
                             <?php if (isset($validation_errors['postnom_etu'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['postnom_etu']) ?>
-                                </div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['postnom_etu']) ?></span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['prenom_etu']) ? 'is-invalid' : '' ?>"
-                                id="prenom_etu" name="prenom_etu" placeholder="Prénom"
-                                value="<?= htmlspecialchars($_POST['prenom_etu'] ?? '') ?>" required maxlength="50">
-                            <label for="prenom_etu">Prénom *</label>
+
+                        <div class="c-input-group">
+                            <input type="text" id="prenom_etu" name="prenom_etu" placeholder=" " required maxlength="50"
+                                class="c-input <?= isset($validation_errors['prenom_etu']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['prenom_etu'] ?? '') ?>">
+                            <label for="prenom_etu" class="c-label">Prénom *</label>
                             <?php if (isset($validation_errors['prenom_etu'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['prenom_etu']) ?>
-                                </div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['prenom_etu']) ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
-                </div>
 
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <select class="form-select <?= isset($validation_errors['sexe']) ? 'is-invalid' : '' ?>"
-                                id="sexe" name="sexe" required>
-                                <option value="">Sélectionnez le sexe</option>
-                                <option value="M" <?= (($_POST['sexe'] ?? '') === 'M') ? 'selected' : '' ?>>Masculin
-                                </option>
-                                <option value="F" <?= (($_POST['sexe'] ?? '') === 'F') ? 'selected' : '' ?>>Féminin
-                                </option>
+                    <div class="c-grid-2 mt-3" style="margin-top: 12px;">
+                        <div class="c-input-group">
+                            <select id="sexe" name="sexe" required
+                                class="c-input <?= isset($validation_errors['sexe']) ? 'has-error' : '' ?>">
+                                <option value="" disabled <?= empty($_POST['sexe']) ? 'selected' : '' ?>></option>
+                                <option value="M" <?= (($_POST['sexe'] ?? '') === 'M') ? 'selected' : '' ?>>Masculin</option>
+                                <option value="F" <?= (($_POST['sexe'] ?? '') === 'F') ? 'selected' : '' ?>>Féminin</option>
                             </select>
-                            <label for="sexe">Sexe *</label>
+                            <!-- Classe 'active' ajoutée pour forcer le label en haut pour les menus déroulants -->
+                            <label for="sexe" class="c-label active">Sexe *</label>
                             <?php if (isset($validation_errors['sexe'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['sexe']) ?></div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['sexe']) ?></span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="date"
-                                class="form-control <?= isset($validation_errors['date_naiss']) ? 'is-invalid' : '' ?>"
-                                id="date_naiss" name="date_naiss"
-                                value="<?= htmlspecialchars($_POST['date_naiss'] ?? '') ?>"
+
+                        <div class="c-input-group">
+                            <input type="date" id="date_naiss" name="date_naiss"
                                 max="<?= date('Y-m-d', strtotime('-15 years')) ?>"
-                                min="<?= date('Y-m-d', strtotime('-80 years')) ?>">
-                            <label for="date_naiss">Date de naissance</label>
+                                min="<?= date('Y-m-d', strtotime('-80 years')) ?>"
+                                class="c-input <?= isset($validation_errors['date_naiss']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['date_naiss'] ?? '') ?>">
+                            <label for="date_naiss" class="c-label active">Date de naissance</label>
                             <?php if (isset($validation_errors['date_naiss'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['date_naiss']) ?>
-                                </div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['date_naiss']) ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Section Informations Complémentaires -->
-            <div class="form-section">
-                <h5>Informations Complémentaires</h5>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['lieu_naiss']) ? 'is-invalid' : '' ?>"
-                                id="lieu_naiss" name="lieu_naiss" placeholder="Lieu de naissance"
-                                value="<?= htmlspecialchars($_POST['lieu_naiss'] ?? '') ?>" maxlength="100">
-                            <label for="lieu_naiss">Lieu de naissance</label>
+                <!-- Section Informations Complémentaires -->
+                <div class="c-section">
+                    <h5>Informations Complémentaires</h5>
+                    <div class="c-grid-2">
+                        <div class="c-input-group">
+                            <input type="text" id="lieu_naiss" name="lieu_naiss" placeholder=" " maxlength="100"
+                                class="c-input <?= isset($validation_errors['lieu_naiss']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['lieu_naiss'] ?? '') ?>">
+                            <label for="lieu_naiss" class="c-label">Lieu de naissance</label>
                             <?php if (isset($validation_errors['lieu_naiss'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['lieu_naiss']) ?>
-                                </div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['lieu_naiss']) ?></span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['nationalite']) ? 'is-invalid' : '' ?>"
-                                id="nationalite" name="nationalite" placeholder="Nationalité"
-                                value="<?= htmlspecialchars($_POST['nationalite'] ?? '') ?>" maxlength="50">
-                            <label for="nationalite">Nationalité</label>
+
+                        <div class="c-input-group">
+                            <input type="text" id="nationalite" name="nationalite" placeholder=" " maxlength="50"
+                                class="c-input <?= isset($validation_errors['nationalite']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['nationalite'] ?? '') ?>">
+                            <label for="nationalite" class="c-label">Nationalité</label>
                             <?php if (isset($validation_errors['nationalite'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['nationalite']) ?>
-                                </div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['nationalite']) ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="c-grid-1" style="margin-top: 12px;">
+                        <div class="c-input-group">
+                            <textarea id="adresse" name="adresse" placeholder=" " maxlength="255"
+                                class="c-input <?= isset($validation_errors['adresse']) ? 'has-error' : '' ?>"><?= htmlspecialchars($_POST['adresse'] ?? '') ?></textarea>
+                            <label for="adresse" class="c-label">Adresse complète</label>
+                            <?php if (isset($validation_errors['adresse'])): ?>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['adresse']) ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
 
-                <div class="form-floating">
-                    <textarea class="form-control <?= isset($validation_errors['adresse']) ? 'is-invalid' : '' ?>"
-                        id="adresse" name="adresse" placeholder="Adresse complète" style="height: 100px"
-                        maxlength="255"><?= htmlspecialchars($_POST['adresse'] ?? '') ?></textarea>
-                    <label for="adresse">Adresse complète</label>
-                    <?php if (isset($validation_errors['adresse'])): ?>
-                        <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['adresse']) ?></div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Section Contact -->
-            <div class="form-section">
-                <h5>Informations de Contact</h5>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="tel"
-                                class="form-control <?= isset($validation_errors['telephone']) ? 'is-invalid' : '' ?>"
-                                id="telephone" name="telephone" placeholder="Numéro de téléphone"
-                                value="<?= htmlspecialchars($_POST['telephone'] ?? '') ?>"
-                                pattern="[0-9+\-\s()]{10,15}">
-                            <label for="telephone">Numéro de téléphone</label>
+                <!-- Section Contact -->
+                <div class="c-section">
+                    <h5>Contact</h5>
+                    <div class="c-grid-2">
+                        <div class="c-input-group">
+                            <input type="tel" id="telephone" name="telephone" placeholder=" " pattern="[0-9+\-\s()]{10,15}"
+                                class="c-input <?= isset($validation_errors['telephone']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['telephone'] ?? '') ?>">
+                            <label for="telephone" class="c-label">Numéro de téléphone</label>
                             <?php if (isset($validation_errors['telephone'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['telephone']) ?></div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['telephone']) ?></span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="email"
-                                class="form-control <?= isset($validation_errors['email']) ? 'is-invalid' : '' ?>"
-                                id="email" name="email" placeholder="Adresse e-mail"
+
+                        <div class="c-input-group">
+                            <input type="email" id="email" name="email" placeholder=" "
+                                class="c-input <?= isset($validation_errors['email']) ? 'has-error' : '' ?>"
                                 value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
-                            <label for="email">Adresse e-mail</label>
+                            <label for="email" class="c-label">Adresse e-mail</label>
                             <?php if (isset($validation_errors['email'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['email']) ?></div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['email']) ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Section Famille -->
-            <div class="form-section">
-                <h5>Informations Familiales</h5>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['nom_pere']) ? 'is-invalid' : '' ?>"
-                                id="nom_pere" name="nom_pere" placeholder="Nom complet du père"
-                                value="<?= htmlspecialchars($_POST['nom_pere'] ?? '') ?>" maxlength="100">
-                            <label for="nom_pere">Nom complet du père</label>
+                <!-- Section Famille -->
+                <div class="c-section">
+                    <h5>Informations Familiales</h5>
+                    <div class="c-grid-2">
+                        <div class="c-input-group">
+                            <input type="text" id="nom_pere" name="nom_pere" placeholder=" " maxlength="100"
+                                class="c-input <?= isset($validation_errors['nom_pere']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['nom_pere'] ?? '') ?>">
+                            <label for="nom_pere" class="c-label">Nom complet du père</label>
                             <?php if (isset($validation_errors['nom_pere'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['nom_pere']) ?></div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['nom_pere']) ?></span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            <input type="text"
-                                class="form-control <?= isset($validation_errors['nom_mere']) ? 'is-invalid' : '' ?>"
-                                id="nom_mere" name="nom_mere" placeholder="Nom complet de la mère"
-                                value="<?= htmlspecialchars($_POST['nom_mere'] ?? '') ?>" maxlength="100">
-                            <label for="nom_mere">Nom complet de la mère</label>
+
+                        <div class="c-input-group">
+                            <input type="text" id="nom_mere" name="nom_mere" placeholder=" " maxlength="100"
+                                class="c-input <?= isset($validation_errors['nom_mere']) ? 'has-error' : '' ?>"
+                                value="<?= htmlspecialchars($_POST['nom_mere'] ?? '') ?>">
+                            <label for="nom_mere" class="c-label">Nom complet de la mère</label>
                             <?php if (isset($validation_errors['nom_mere'])): ?>
-                                <div class="invalid-feedback"><?= htmlspecialchars($validation_errors['nom_mere']) ?></div>
+                                <span class="c-error-msg"><?= htmlspecialchars($validation_errors['nom_mere']) ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Boutons d'action -->
-            <div class="d-flex justify-content-end gap-3 mt-4">
-                <button type="button" class="btn btn-modern-secondary" onclick="resetForm()">
-                    Réinitialiser
-                </button>
-                <button type="submit" class="btn btn-modern-primary" id="submitBtn">
-                    Inscrire l'Étudiant
-                </button>
-            </div>
-        </form>
+                <!-- Actions -->
+                <div class="c-actions">
+                    <button type="button" class="c-btn c-btn-reset" onclick="resetForm()">
+                        Réinitialiser
+                    </button>
+                    <button type="submit" class="c-btn c-btn-submit" id="submitBtn">
+                        Inscrire l'Étudiant
+                    </button>
+                </div>
+            </form>
+        </div>
 
         <!-- Tableau des inscriptions existantes -->
         <div class="mt-5">
@@ -717,9 +746,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $stmt = $pdo->prepare("DELETE FROM t_etudiant WHERE matricule = (SELECT matricule FROM t_inscription WHERE id_inscription = ?)");
                                         $stmt->execute([$delete_id]);
                                     }
-                                    $pdo->commit();
-                                    header("Location: " . $redirect_url);
 
+                                    $redirect_url = $_SERVER["REQUEST_URI"];
+                                    header("Location: " . $redirect_url);
+                                    exit;
                                 } catch (Exception $e) {
                                     $pdo->rollBack();
                                     echo '<div class="alert alert-danger">Erreur lors de la suppression : ' . htmlspecialchars($e->getMessage()) . '</div>';
@@ -737,7 +767,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'postnom_etu' => validateInput($_POST['edit_postnom_etu'] ?? '', 'string', true, 50),
                                     'prenom_etu' => validateInput($_POST['edit_prenom_etu'] ?? '', 'string', true, 50),
                                     'sexe' => validateInput($_POST['edit_sexe'] ?? '', 'string', true)
-                                    
+
                                 ];
                                 $edit_errors = [];
                                 foreach ($fields_edit as $k => $v) {
@@ -760,7 +790,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 $fields_edit['nom_etu']['value'],
                                                 $fields_edit['postnom_etu']['value'],
                                                 $fields_edit['prenom_etu']['value'],
-                                                $fields_edit['sexe']['value'], 
+                                                $fields_edit['sexe']['value'],
                                                 $matricule_edit
                                             ]);
                                             // Définir l'URL de redirection après modification
@@ -781,7 +811,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         foreach ($inscriptions as $insc):
                             if ($edit_id && $insc['id_inscription'] == $edit_id):
-                                ?>
+                        ?>
                                 <form method="POST">
                                     <input type="hidden" name="edit_id" value="<?= $insc['id_inscription'] ?>">
                                     <input type="hidden" name="edit_token" value="<?= htmlspecialchars($csrf_token) ?>">
@@ -802,7 +832,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 <option value="F" <?= $insc['sexe'] === 'F' ? 'selected' : '' ?>>F</option>
                                             </select>
                                         </td>
-                                        
+
                                         <td>
                                             <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
                                             <a href="<?= strtok($_SERVER["REQUEST_URI"], '?') ?>"
@@ -817,7 +847,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <td><?= htmlspecialchars($insc['postnom_etu']) ?></td>
                                     <td><?= htmlspecialchars($insc['prenom_etu']) ?></td>
                                     <td><?= htmlspecialchars($insc['sexe']) ?></td>
-                                    
+
                                     <td>
                                         <a href="?<?= http_build_query(array_merge($_GET, ['edit' => $insc['id_inscription']])) ?>"
                                             class="btn btn-outline-primary btn-sm">Modifier</a>
@@ -831,7 +861,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </form>
                                     </td>
                                 </tr>
-                            <?php endif; endforeach; ?>
+                        <?php endif;
+                        endforeach; ?>
                         <?php if (empty($inscriptions)): ?>
                             <tr>
                                 <td colspan="14" class="text-center">Aucune inscription trouvée.</td>
