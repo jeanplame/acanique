@@ -124,7 +124,7 @@ $error = null;
 $success = null;
 $validation_errors = [];
 $mention_id = filter_var($_GET['mention'] ?? null, FILTER_VALIDATE_INT);
-$promotion_code = filter_var($_GET['promotion'] ?? '', FILTER_SANITIZE_STRING);
+$promotion_code = $_GET['promotion'] ?? '';
 $id_domaine = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 
 // Validation des paramètres requis
@@ -212,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Récupération et validation des champs cachés
     $annee_academique_form = filter_var($_POST['annee_academique'] ?? null, FILTER_VALIDATE_INT);
     $mention_id_form = filter_var($_POST['mention_id'] ?? null, FILTER_VALIDATE_INT);
-    $promotion_code_form = filter_var($_POST['promotion_code'] ?? '', FILTER_SANITIZE_STRING);
+    $promotion_code_form = $_GET['promotion'] ?? '';
     $id_filiere_form_post = filter_var($_POST['id_filiere'] ?? null, FILTER_VALIDATE_INT);
 
     if (!$annee_academique_form || !$mention_id_form || !$promotion_code_form || !$id_filiere_form_post) {
@@ -676,14 +676,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <th>Post-nom</th>
                             <th>Prénom</th>
                             <th>Sexe</th>
-                            <th>Date de naissance</th>
-                            <th>Lieu de naissance</th>
-                            <th>Nationalité</th>
-                            <th>Adresse</th>
-                            <th>Téléphone</th>
-                            <th>Email</th>
-                            <th>Nom du père</th>
-                            <th>Nom de la mère</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -744,15 +736,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'nom_etu' => validateInput($_POST['edit_nom_etu'] ?? '', 'string', true, 50),
                                     'postnom_etu' => validateInput($_POST['edit_postnom_etu'] ?? '', 'string', true, 50),
                                     'prenom_etu' => validateInput($_POST['edit_prenom_etu'] ?? '', 'string', true, 50),
-                                    'sexe' => validateInput($_POST['edit_sexe'] ?? '', 'string', true),
-                                    'date_naiss' => validateInput($_POST['edit_date_naiss'] ?? '', 'date', false),
-                                    'lieu_naiss' => validateInput($_POST['edit_lieu_naiss'] ?? '', 'string', false, 100),
-                                    'nationalite' => validateInput($_POST['edit_nationalite'] ?? '', 'string', false, 50),
-                                    'adresse' => validateInput($_POST['edit_adresse'] ?? '', 'string', false, 255),
-                                    'telephone' => validateInput($_POST['edit_telephone'] ?? '', 'phone', false),
-                                    'email' => validateInput($_POST['edit_email'] ?? '', 'email', false),
-                                    'nom_pere' => validateInput($_POST['edit_nom_pere'] ?? '', 'string', false, 100),
-                                    'nom_mere' => validateInput($_POST['edit_nom_mere'] ?? '', 'string', false, 100)
+                                    'sexe' => validateInput($_POST['edit_sexe'] ?? '', 'string', true)
+                                    
                                 ];
                                 $edit_errors = [];
                                 foreach ($fields_edit as $k => $v) {
@@ -768,26 +753,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         if ($matricule_edit) {
                                             $stmt = $pdo->prepare("
                                                 UPDATE t_etudiant SET
-                                                    nom_etu = ?, postnom_etu = ?, prenom_etu = ?, sexe = ?, date_naiss = ?, lieu_naiss = ?, nationalite = ?, adresse = ?, telephone = ?, email = ?, nom_pere = ?, nom_mere = ?, date_mise_a_jour = NOW()
+                                                    nom_etu = ?, postnom_etu = ?, prenom_etu = ?, sexe = ?, date_mise_a_jour = NOW()
                                                 WHERE matricule = ?
                                             ");
                                             $stmt->execute([
                                                 $fields_edit['nom_etu']['value'],
                                                 $fields_edit['postnom_etu']['value'],
                                                 $fields_edit['prenom_etu']['value'],
-                                                $fields_edit['sexe']['value'],
-                                                !empty($fields_edit['date_naiss']['value']) ? $fields_edit['date_naiss']['value'] : null,
-                                                $fields_edit['lieu_naiss']['value'],
-                                                $fields_edit['nationalite']['value'],
-                                                $fields_edit['adresse']['value'],
-                                                $fields_edit['telephone']['value'],
-                                                $fields_edit['email']['value'],
-                                                $fields_edit['nom_pere']['value'],
-                                                $fields_edit['nom_mere']['value'],
+                                                $fields_edit['sexe']['value'], 
                                                 $matricule_edit
                                             ]);
+                                            // Définir l'URL de redirection après modification
+                                            $redirect_url = $_SERVER['REQUEST_URI'];
                                             header("Location: " . $redirect_url);
                                             exit();
+                                        } else {
+                                            echo '<div class="alert alert-danger">Inscription non trouvée pour la modification.</div>';
                                         }
                                     } catch (Exception $e) {
                                         echo '<div class="alert alert-danger">Erreur lors de la modification : ' . htmlspecialchars($e->getMessage()) . '</div>';
@@ -821,29 +802,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 <option value="F" <?= $insc['sexe'] === 'F' ? 'selected' : '' ?>>F</option>
                                             </select>
                                         </td>
-                                        <td><input type="date" name="edit_date_naiss"
-                                                value="<?= htmlspecialchars($insc['date_naiss']) ?>" class="form-control"></td>
-                                        <td><input type="text" name="edit_lieu_naiss"
-                                                value="<?= htmlspecialchars($insc['lieu_naiss']) ?>" class="form-control"
-                                                maxlength="100"></td>
-                                        <td><input type="text" name="edit_nationalite"
-                                                value="<?= htmlspecialchars($insc['nationalite']) ?>" class="form-control"
-                                                maxlength="50"></td>
-                                        <td><input type="text" name="edit_adresse"
-                                                value="<?= htmlspecialchars($insc['adresse']) ?>" class="form-control"
-                                                maxlength="255"></td>
-                                        <td><input type="text" name="edit_telephone"
-                                                value="<?= htmlspecialchars($insc['telephone']) ?>" class="form-control"
-                                                maxlength="20"></td>
-                                        <td><input type="email" name="edit_email"
-                                                value="<?= htmlspecialchars($insc['email']) ?>" class="form-control"
-                                                maxlength="100"></td>
-                                        <td><input type="text" name="edit_nom_pere"
-                                                value="<?= htmlspecialchars($insc['nom_pere']) ?>" class="form-control"
-                                                maxlength="100"></td>
-                                        <td><input type="text" name="edit_nom_mere"
-                                                value="<?= htmlspecialchars($insc['nom_mere']) ?>" class="form-control"
-                                                maxlength="100"></td>
+                                        
                                         <td>
                                             <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
                                             <a href="<?= strtok($_SERVER["REQUEST_URI"], '?') ?>"
@@ -858,14 +817,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <td><?= htmlspecialchars($insc['postnom_etu']) ?></td>
                                     <td><?= htmlspecialchars($insc['prenom_etu']) ?></td>
                                     <td><?= htmlspecialchars($insc['sexe']) ?></td>
-                                    <td><?= htmlspecialchars($insc['date_naiss']) ?></td>
-                                    <td><?= htmlspecialchars($insc['lieu_naiss']) ?></td>
-                                    <td><?= htmlspecialchars($insc['nationalite']) ?></td>
-                                    <td><?= htmlspecialchars($insc['adresse']) ?></td>
-                                    <td><?= htmlspecialchars($insc['telephone']) ?></td>
-                                    <td><?= htmlspecialchars($insc['email']) ?></td>
-                                    <td><?= htmlspecialchars($insc['nom_pere']) ?></td>
-                                    <td><?= htmlspecialchars($insc['nom_mere']) ?></td>
+                                    
                                     <td>
                                         <a href="?<?= http_build_query(array_merge($_GET, ['edit' => $insc['id_inscription']])) ?>"
                                             class="btn btn-outline-primary btn-sm">Modifier</a>
