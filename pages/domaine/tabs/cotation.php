@@ -95,9 +95,8 @@ if (($is_ec_selected || $is_ue_selected) && !$selected_item) {
 // --- FIN DE LA CORRECTION AMÉLIORÉE ---
 
 
-// Récupérer les étudiants de la promotion et de la mention
-// Note : La fonction getStudentsForPromotionAndMention n'est pas dans le code fourni, on suppose qu'elle est définie ailleurs.
-$students = getStudentsForPromotionAndMention($pdo, $promotion_code, $mention_id);
+// Récupérer les étudiants de la promotion, mention et année académique en cours
+$students = getStudentsForPromotionAndMention($pdo, $promotion_code, $mention_id, $id_annee);
 
 $existing_notes = [];
 $stmt_notes = null; // Initialisation

@@ -50,29 +50,69 @@ $semestre_filter = isset($_GET['semestre']) && in_array($_GET['semestre'], ['1',
 // Ajouter le paramètre pour choisir entre vue normale et vue avec rattrapage
 $mode_rattrapage = isset($_GET['rattrapage']) && $_GET['rattrapage'] === '1';
 
-// *** UTILISATION UNIQUE DE vue_grille_deliberation (qui fonctionne parfaitement) ***
-// La logique de rattrapage sera gérée dans le code PHP, pas dans une vue séparée
-// Étape 1: Récupérer la structure des cours (UE/EC) depuis la vue standard
+// Étape 1: Récupérer la structure des cours (UE/EC) en forçant l'année académique
+// et les statuts de programmation UE/EC.
 $sql_structure = "
     SELECT DISTINCT
-        matricule,
-        nom_complet,
-        code_ue,
-        libelle_ue,
-        credits,
-        code_ec,
-        libelle_ec,
-        coef_ec,
-        id_semestre,
-        semestre_mention,
-        code_promotion,
-        id_ue,
-        id_ec
-    FROM vue_grille_deliberation
-    WHERE id_annee = :annee
-    " . ($id_mention ? "AND id_mention = :mention" : "") . "
-    " . ($id_semestre ? "AND semestre_mention = :semestre" : "") . "
-    " . ($code_promo ? "AND code_promotion = :promo" : "") . "
+        e.matricule AS matricule,
+        CONCAT(e.nom_etu, ' ', e.postnom_etu, ' ', e.prenom_etu) AS nom_complet,
+        ue.code_ue AS code_ue,
+        ue.libelle AS libelle_ue,
+        ue.credits AS credits,
+        CASE
+            WHEN ec.id_ec IS NOT NULL THEN ec.code_ec
+            ELSE ue.code_ue
+        END AS code_ec,
+        CASE
+            WHEN ec.id_ec IS NOT NULL THEN ec.libelle
+            ELSE ue.libelle
+        END AS libelle_ec,
+        CASE
+            WHEN ec.id_ec IS NOT NULL THEN ec.coefficient
+            ELSE ue.credits
+        END AS coef_ec,
+        ue.id_semestre AS id_semestre,
+        CASE
+            WHEN mue.semestre IN (1, 2) THEN mue.semestre
+            WHEN s.code_semestre LIKE '%1%' OR s.nom_semestre LIKE '%1%' THEN 1
+            WHEN s.code_semestre LIKE '%2%' OR s.nom_semestre LIKE '%2%' THEN 2
+            ELSE mue.semestre
+        END AS semestre_mention,
+        i.code_promotion AS code_promotion,
+        ue.id_ue AS id_ue,
+        CASE
+            WHEN ec.id_ec IS NOT NULL THEN CAST(ec.id_ec AS CHAR)
+            ELSE CONCAT('UE_', ue.id_ue)
+        END AS id_ec
+    FROM t_inscription i
+    INNER JOIN t_etudiant e ON e.matricule = i.matricule
+    INNER JOIN t_mention_ue mue ON mue.id_mention = i.id_mention
+    INNER JOIN t_unite_enseignement ue
+        ON ue.id_ue = mue.id_ue
+        AND ue.code_promotion = i.code_promotion
+    INNER JOIN t_semestre s
+        ON s.id_semestre = ue.id_semestre
+        AND s.id_annee = i.id_annee
+    LEFT JOIN t_element_constitutif ec
+        ON ec.id_ue = ue.id_ue
+    LEFT JOIN t_mention_ue_ec muec
+        ON muec.id_mention_ue = mue.id_mention_ue
+        AND muec.id_ec = ec.id_ec
+    WHERE i.statut = 'Actif'
+      AND i.id_annee = :annee
+      AND ue.is_programmed = 1
+      AND (ec.id_ec IS NULL OR ec.is_programmed = 1)
+      AND (ec.id_ec IS NULL OR muec.id_ec IS NOT NULL)
+    " . ($id_mention ? "AND i.id_mention = :mention" : "") . "
+    " . ($id_semestre ? "AND (
+        CASE
+            WHEN mue.semestre IN (1, 2) THEN mue.semestre
+            WHEN s.code_semestre LIKE '%1%' OR s.nom_semestre LIKE '%1%' THEN 1
+            WHEN s.code_semestre LIKE '%2%' OR s.nom_semestre LIKE '%2%' THEN 2
+            ELSE mue.semestre
+        END
+    ) = :semestre" : "") . "
+    " . ($code_promo ? "AND i.code_promotion = :promo" : "") . "
     ORDER BY nom_complet, code_ue, code_ec
 ";
 
@@ -243,8 +283,80 @@ foreach ($structure as $row) {
 
 // Debug : afficher les paramètres et le nombre de résultats
 if (empty($resultats)) {
-    echo "<div class='alert alert-warning'>Aucune donnée trouvée. Paramètres: ";
+    // Diagnostic détaillé pour identifier la cause (inscriptions/programmation/année)
+    $diag = [
+        'inscriptions_actives' => 0,
+        'ues_programmees' => 0,
+        'ecs_programmes' => 0
+    ];
+
+    try {
+        $sql_diag_inscriptions = "
+            SELECT COUNT(*)
+            FROM t_inscription
+            WHERE id_annee = :annee
+              AND id_mention = :mention
+              AND code_promotion = :promo
+              AND statut = 'Actif'
+        ";
+        $stmt_diag_inscriptions = $pdo->prepare($sql_diag_inscriptions);
+        $stmt_diag_inscriptions->execute([
+            'annee' => $id_annee,
+            'mention' => $id_mention,
+            'promo' => $code_promo
+        ]);
+        $diag['inscriptions_actives'] = (int) $stmt_diag_inscriptions->fetchColumn();
+
+        $sql_diag_ues = "
+            SELECT COUNT(DISTINCT ue.id_ue)
+            FROM t_unite_enseignement ue
+            INNER JOIN t_semestre s ON s.id_semestre = ue.id_semestre
+            INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
+            WHERE s.id_annee = :annee
+              AND ue.code_promotion = :promo
+              AND mu.id_mention = :mention
+              AND ue.is_programmed = 1
+        ";
+        $stmt_diag_ues = $pdo->prepare($sql_diag_ues);
+        $stmt_diag_ues->execute([
+            'annee' => $id_annee,
+            'mention' => $id_mention,
+            'promo' => $code_promo
+        ]);
+        $diag['ues_programmees'] = (int) $stmt_diag_ues->fetchColumn();
+
+        $sql_diag_ecs = "
+            SELECT COUNT(DISTINCT ec.id_ec)
+            FROM t_element_constitutif ec
+            INNER JOIN t_unite_enseignement ue ON ue.id_ue = ec.id_ue
+            INNER JOIN t_semestre s ON s.id_semestre = ue.id_semestre
+            INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
+            WHERE s.id_annee = :annee
+              AND ue.code_promotion = :promo
+              AND mu.id_mention = :mention
+              AND ue.is_programmed = 1
+              AND ec.is_programmed = 1
+        ";
+        $stmt_diag_ecs = $pdo->prepare($sql_diag_ecs);
+        $stmt_diag_ecs->execute([
+            'annee' => $id_annee,
+            'mention' => $id_mention,
+            'promo' => $code_promo
+        ]);
+        $diag['ecs_programmes'] = (int) $stmt_diag_ecs->fetchColumn();
+    } catch (Exception $e) {
+        error_log('Diagnostic délibération indisponible: ' . $e->getMessage());
+    }
+
+    echo "<div class='alert alert-warning'>";
+    echo "Aucune donnée trouvée. Paramètres: ";
     echo "Année: $id_annee, Mention: $id_mention, Semestre: $id_semestre, Promotion: $code_promo";
+    echo "<hr style='margin:8px 0;'>";
+    echo "<strong>Diagnostic:</strong> ";
+    echo "Inscriptions actives = {$diag['inscriptions_actives']}, ";
+    echo "UE programmées = {$diag['ues_programmees']}, ";
+    echo "EC programmés = {$diag['ecs_programmes']}.";
+    echo "<br><small>La grille n'affiche que les étudiants inscrits actifs de l'année sélectionnée, avec des UE/EC programmés (is_programmed = 1).</small>";
     echo "</div>";
 }
 
@@ -643,13 +755,26 @@ function calcTotalCoef($ues)
 {
     $total = 0;
     foreach ($ues as $ue) {
-        if (empty($ue['ecs'])) {
-            $total += $ue['credits'] ?? 0;
-        } else {
-            foreach ($ue['ecs'] as $ec) {
-                $coef = $ec['coef'] ?? 1;
-                $total += $coef;
+        // Si UE sans EC (placeholder) ou tous les EC sont des placeholders
+        $hasRealEc = false;
+        foreach ($ue['ecs'] as $ec) {
+            if (empty($ec['is_ue_sans_ec'])) {
+                $hasRealEc = true;
+                break;
             }
+        }
+
+        if (!$hasRealEc) {
+            $total += $ue['credits'] ?? 0;
+            continue;
+        }
+
+        foreach ($ue['ecs'] as $ec) {
+            if (!empty($ec['is_ue_sans_ec'])) {
+                continue;
+            }
+            $coef = $ec['coef'] ?? 0;
+            $total += $coef;
         }
     }
     return $total;
@@ -691,33 +816,49 @@ function calcCreditsValides($notes, $ues)
 {
     $totalCredits = 0;
     foreach ($ues as $codeUE => $ue) {
-        if (empty($ue['ecs'])) {
-            // UE sans EC → validation sur la note UE
+        // Détecter si UE est sans EC ou plein d'EC placeholders
+        $isUeSansEc = true;
+        foreach ($ue['ecs'] as $ec) {
+            if (empty($ec['is_ue_sans_ec'])) {
+                $isUeSansEc = false;
+                break;
+            }
+        }
+
+        if ($isUeSansEc) {
+            // UE sans EC → validation sur la note UE (ou placeholder EC) avec crédit UE
             $noteS1 = $notes[$codeUE]['ue']['s1'] ?? null;
             $noteS2 = $notes[$codeUE]['ue']['s2'] ?? null;
-            // Vérifier que la note existe, est supérieure à 0 et >= 10
-            if (($noteS1 !== null && $noteS1 > 0 && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 > 0 && $noteS2 >= 10)) {
+
+            if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
                 $totalCredits += $ue['credits'];
             }
-        } else {
-            // UE avec EC → validée si tous ses EC (ou une partie) sont validés
-            $ueValidee = false;
-            foreach ($ue['ecs'] as $codeEC => $ec) {
-                if (isset($notes[$codeUE][$codeEC])) {
-                    $noteS1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
-                    $noteS2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
-                    // Vérifier que la note existe, est supérieure à 0 et >= 10
-                    if (($noteS1 !== null && $noteS1 > 0 && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 > 0 && $noteS2 >= 10)) {
-                        $ueValidee = true;
-                        break;
-                    }
-                }
+            continue;
+        }
+
+        // UE avec EC normaux --> validation UEs par au moins un EC validé
+        $ueValidee = false;
+        foreach ($ue['ecs'] as $codeEC => $ec) {
+            if (!empty($ec['is_ue_sans_ec'])) {
+                continue;
             }
-            if ($ueValidee) {
-                // Crédit de l'UE = somme des coefs de ses EC
-                foreach ($ue['ecs'] as $ec) {
-                    $totalCredits += $ec['coef'] ?? 1;
+            if (!isset($notes[$codeUE][$codeEC])) {
+                continue;
+            }
+            $noteS1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
+            $noteS2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
+            if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
+                $ueValidee = true;
+                break;
+            }
+        }
+
+        if ($ueValidee) {
+            foreach ($ue['ecs'] as $ec) {
+                if (!empty($ec['is_ue_sans_ec'])) {
+                    continue;
                 }
+                $totalCredits += $ec['coef'] ?? 1;
             }
         }
     }
@@ -751,12 +892,26 @@ function calcTotalCredits($ues)
 {
     $total = 0;
     foreach ($ues as $ue) {
-        if (empty($ue['ecs'])) {
-            $total += $ue['credits'] ?? 0;
-        } else {
-            foreach ($ue['ecs'] as $ec) {
-                $total += $ec['coef'] ?? 1;
+        // Si UE sans EC, on prend les crédits UE.
+        $hasRealEc = false;
+        foreach ($ue['ecs'] as $ec) {
+            if (empty($ec['is_ue_sans_ec'])) {
+                $hasRealEc = true;
+                break;
             }
+        }
+
+        if (!$hasRealEc) {
+            $total += $ue['credits'] ?? 0;
+            continue;
+        }
+
+        // Sinon somme des coefs des EC réels
+        foreach ($ue['ecs'] as $ec) {
+            if (!empty($ec['is_ue_sans_ec'])) {
+                continue;
+            }
+            $total += $ec['coef'] ?? 0;
         }
     }
     return $total;

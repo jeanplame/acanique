@@ -329,13 +329,25 @@ function calcTotalCoef($ues)
 {
     $total = 0;
     foreach ($ues as $ue) {
-        if (empty($ue['ecs'])) {
-            $total += $ue['credits'] ?? 0;
-        } else {
-            foreach ($ue['ecs'] as $ec) {
-                $coef = $ec['coef'] ?? 1;
-                $total += $coef;
+        $hasRealEc = false;
+        foreach ($ue['ecs'] as $ec) {
+            if (empty($ec['is_ue_sans_ec'])) {
+                $hasRealEc = true;
+                break;
             }
+        }
+
+        if (!$hasRealEc) {
+            $total += $ue['credits'] ?? 0;
+            continue;
+        }
+
+        foreach ($ue['ecs'] as $ec) {
+            if (!empty($ec['is_ue_sans_ec'])) {
+                continue;
+            }
+            $coef = $ec['coef'] ?? 0;
+            $total += $coef;
         }
     }
     return $total;
@@ -375,31 +387,45 @@ function calcCreditsValides($notes, $ues)
 {
     $totalCredits = 0;
     foreach ($ues as $codeUE => $ue) {
-        if (empty($ue['ecs'])) {
-            // UE sans EC → validation sur la note UE
+        $isUeSansEc = true;
+        foreach ($ue['ecs'] as $ec) {
+            if (empty($ec['is_ue_sans_ec'])) {
+                $isUeSansEc = false;
+                break;
+            }
+        }
+
+        if ($isUeSansEc) {
             $noteS1 = $notes[$codeUE]['ue']['s1'] ?? null;
             $noteS2 = $notes[$codeUE]['ue']['s2'] ?? null;
             if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
                 $totalCredits += $ue['credits'];
             }
-        } else {
-            // UE avec EC → validée si tous ses EC (ou une partie) sont validés
-            $ueValidee = false;
-            foreach ($ue['ecs'] as $codeEC => $ec) {
-                if (isset($notes[$codeUE][$codeEC])) {
-                    $noteS1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
-                    $noteS2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
-                    if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
-                        $ueValidee = true;
-                        break;
-                    }
-                }
+            continue;
+        }
+
+        $ueValidee = false;
+        foreach ($ue['ecs'] as $codeEC => $ec) {
+            if (!empty($ec['is_ue_sans_ec'])) {
+                continue;
             }
-            if ($ueValidee) {
-                // Crédit de l'UE = somme des coefs de ses EC
-                foreach ($ue['ecs'] as $ec) {
-                    $totalCredits += $ec['coef'] ?? 1;
+            if (!isset($notes[$codeUE][$codeEC])) {
+                continue;
+            }
+            $noteS1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
+            $noteS2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
+            if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
+                $ueValidee = true;
+                break;
+            }
+        }
+
+        if ($ueValidee) {
+            foreach ($ue['ecs'] as $ec) {
+                if (!empty($ec['is_ue_sans_ec'])) {
+                    continue;
                 }
+                $totalCredits += $ec['coef'] ?? 1;
             }
         }
     }
@@ -433,12 +459,24 @@ function calcTotalCredits($ues)
 {
     $total = 0;
     foreach ($ues as $ue) {
-        if (empty($ue['ecs'])) {
-            $total += $ue['credits'] ?? 0;
-        } else {
-            foreach ($ue['ecs'] as $ec) {
-                $total += $ec['coef'] ?? 1;
+        $hasRealEc = false;
+        foreach ($ue['ecs'] as $ec) {
+            if (empty($ec['is_ue_sans_ec'])) {
+                $hasRealEc = true;
+                break;
             }
+        }
+
+        if (!$hasRealEc) {
+            $total += $ue['credits'] ?? 0;
+            continue;
+        }
+
+        foreach ($ue['ecs'] as $ec) {
+            if (!empty($ec['is_ue_sans_ec'])) {
+                continue;
+            }
+            $total += $ec['coef'] ?? 0;
         }
     }
     return $total;

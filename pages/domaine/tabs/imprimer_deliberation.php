@@ -630,8 +630,8 @@ function getMention($moy)
 
                 $totalS1 = 0;
                 $creditsS1 = 0;
-                foreach ($ues_s1 as $ue) {
-                    foreach ($ue['ecs'] as $ec) {
+                foreach ($ues_s1 as $codeUE => $ue) {
+                    foreach ($ue['ecs'] as $codeEC => $ec) {
                         $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
                         if (!is_null($val))
                             $totalS1 += $val * $ec['coef'];
@@ -658,8 +658,8 @@ function getMention($moy)
 
                 $totalS2 = 0;
                 $creditsS2 = 0;
-                foreach ($ues_s2 as $ue) {
-                    foreach ($ue['ecs'] as $ec) {
+                foreach ($ues_s2 as $codeUE => $ue) {
+                    foreach ($ue['ecs'] as $codeEC => $ec) {
                         $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
                         if (!is_null($val))
                             $totalS2 += $val * $ec['coef'];

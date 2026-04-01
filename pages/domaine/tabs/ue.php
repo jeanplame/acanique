@@ -30,6 +30,9 @@ if (!$id_annee) {
     return;
 }
 
+$clone_message = null;
+$clone_message_type = 'info';
+
 // Récupérer TOUJOURS les semestres disponibles pour l'année académique
 $sql_semestres = "SELECT id_semestre, nom_semestre FROM t_semestre WHERE id_annee = ? ORDER BY nom_semestre ASC";
 $stmt_semestres = $pdo->prepare($sql_semestres);
@@ -39,6 +42,144 @@ $semestres = $stmt_semestres->fetchAll(PDO::FETCH_ASSOC);
 if (empty($semestres)) {
     echo '<div class="alert alert-info">Aucun semestre n\'a été trouvé pour l\'année académique en cours.</div>';
     return;
+}
+
+// =========================
+// CLONAGE UE/EC D'UNE ANNÉE PASSÉE
+// =========================
+if ($ue_sub_tab === 'liste' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clone_semestre_source'])) {
+    $source_semestre = (int) ($_POST['clone_semestre_source'] ?? 0);
+    $target_semestre = (int) ($_POST['clone_semestre_cible'] ?? 0);
+
+    if ($source_semestre > 0 && $target_semestre > 0 && $target_semestre === $id_semestre) {
+        try {
+            $pdo->beginTransaction();
+
+            $sql_source_ues = "
+                SELECT ue.id_ue, ue.code_ue, ue.libelle, ue.credits, ue.heures_th, ue.heures_td, ue.heures_tp, mu.semestre
+                FROM t_unite_enseignement ue
+                INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
+                WHERE ue.id_semestre = ?
+                  AND ue.code_promotion = ?
+                  AND mu.id_mention = ?
+                ORDER BY ue.code_ue ASC
+            ";
+            $stmt_source_ues = $pdo->prepare($sql_source_ues);
+            $stmt_source_ues->execute([$source_semestre, $promotion_code, $mention_id]);
+            $source_ues = $stmt_source_ues->fetchAll(PDO::FETCH_ASSOC);
+
+            if (empty($source_ues)) {
+                throw new Exception('Aucune UE source trouvée pour le semestre sélectionné.');
+            }
+
+            $ues_clonees = 0;
+            $ecs_clones = 0;
+
+            foreach ($source_ues as $source_ue) {
+                // Éviter les doublons UE : même promotion + code UE + semestre cible
+                $sql_check_ue = "SELECT id_ue FROM t_unite_enseignement WHERE code_promotion = ? AND code_ue = ? AND id_semestre = ? LIMIT 1";
+                $stmt_check_ue = $pdo->prepare($sql_check_ue);
+                $stmt_check_ue->execute([$promotion_code, $source_ue['code_ue'], $target_semestre]);
+                $target_ue_id = $stmt_check_ue->fetchColumn();
+
+                if (!$target_ue_id) {
+                    $sql_insert_ue = "
+                        INSERT INTO t_unite_enseignement
+                        (code_promotion, code_ue, libelle, credits, id_semestre, heures_th, heures_td, heures_tp, is_programmed)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    ";
+                    $stmt_insert_ue = $pdo->prepare($sql_insert_ue);
+                    $stmt_insert_ue->execute([
+                        $promotion_code,
+                        $source_ue['code_ue'],
+                        $source_ue['libelle'],
+                        $source_ue['credits'],
+                        $target_semestre,
+                        $source_ue['heures_th'],
+                        $source_ue['heures_td'],
+                        $source_ue['heures_tp']
+                    ]);
+                    $target_ue_id = (int) $pdo->lastInsertId();
+                    $ues_clonees++;
+                }
+
+                // Lier la mention à l'UE si absent
+                $sql_check_mu = "SELECT id_mention_ue FROM t_mention_ue WHERE id_mention = ? AND id_ue = ? LIMIT 1";
+                $stmt_check_mu = $pdo->prepare($sql_check_mu);
+                $stmt_check_mu->execute([$mention_id, $target_ue_id]);
+                $target_mention_ue_id = $stmt_check_mu->fetchColumn();
+
+                if (!$target_mention_ue_id) {
+                    $sql_insert_mu = "INSERT INTO t_mention_ue (id_mention, id_ue, semestre, credits) VALUES (?, ?, ?, ?)";
+                    $stmt_insert_mu = $pdo->prepare($sql_insert_mu);
+                    $stmt_insert_mu->execute([$mention_id, $target_ue_id, $target_semestre, (int) $source_ue['credits']]);
+                    $target_mention_ue_id = (int) $pdo->lastInsertId();
+                }
+
+                // Cloner les EC de l'UE source vers UE cible
+                $sql_source_ecs = "
+                    SELECT id_ec, code_ec, libelle, coefficient, heures_th, heures_td, heures_tp
+                    FROM t_element_constitutif
+                    WHERE id_ue = ?
+                    ORDER BY code_ec ASC
+                ";
+                $stmt_source_ecs = $pdo->prepare($sql_source_ecs);
+                $stmt_source_ecs->execute([$source_ue['id_ue']]);
+                $source_ecs = $stmt_source_ecs->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($source_ecs as $source_ec) {
+                    $sql_check_ec = "SELECT id_ec FROM t_element_constitutif WHERE id_ue = ? AND code_ec = ? LIMIT 1";
+                    $stmt_check_ec = $pdo->prepare($sql_check_ec);
+                    $stmt_check_ec->execute([$target_ue_id, $source_ec['code_ec']]);
+                    $target_ec_id = $stmt_check_ec->fetchColumn();
+
+                    if (!$target_ec_id) {
+                        $sql_insert_ec = "
+                            INSERT INTO t_element_constitutif
+                            (id_ue, code_ec, libelle, coefficient, heures_th, heures_td, heures_tp, is_programmed)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                        ";
+                        $stmt_insert_ec = $pdo->prepare($sql_insert_ec);
+                        $stmt_insert_ec->execute([
+                            $target_ue_id,
+                            $source_ec['code_ec'],
+                            $source_ec['libelle'],
+                            $source_ec['coefficient'],
+                            $source_ec['heures_th'],
+                            $source_ec['heures_td'],
+                            $source_ec['heures_tp']
+                        ]);
+                        $target_ec_id = (int) $pdo->lastInsertId();
+                        $ecs_clones++;
+                    }
+
+                    // Lier EC à la mention_ue si absent
+                    $sql_check_muec = "SELECT 1 FROM t_mention_ue_ec WHERE id_mention_ue = ? AND id_ec = ? LIMIT 1";
+                    $stmt_check_muec = $pdo->prepare($sql_check_muec);
+                    $stmt_check_muec->execute([$target_mention_ue_id, $target_ec_id]);
+
+                    if (!$stmt_check_muec->fetchColumn()) {
+                        $sql_insert_muec = "INSERT INTO t_mention_ue_ec (id_mention_ue, id_ec) VALUES (?, ?)";
+                        $stmt_insert_muec = $pdo->prepare($sql_insert_muec);
+                        $stmt_insert_muec->execute([$target_mention_ue_id, $target_ec_id]);
+                    }
+                }
+            }
+
+            $pdo->commit();
+            $clone_message_type = 'success';
+            $clone_message = "Clonage terminé : {$ues_clonees} UE(s) et {$ecs_clones} EC(s) copiés avec is_programmed = 0.";
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $clone_message_type = 'danger';
+            $clone_message = 'Erreur lors du clonage : ' . $e->getMessage();
+        }
+    } else {
+        $clone_message_type = 'warning';
+        $clone_message = 'Sélection invalide pour le clonage.';
+    }
 }
 
 // =========================
@@ -311,6 +452,11 @@ function changeSemestre(idSemestre) {
                     $ues = [];
                 }
                 ?>
+                <?php if (!empty($clone_message)): ?>
+                    <div class="alert alert-<?php echo htmlspecialchars($clone_message_type); ?>">
+                        <?php echo htmlspecialchars($clone_message); ?>
+                    </div>
+                <?php endif; ?>
                 <div class="table-responsive">
                     <?php if (!empty($ues)): ?>
                         <table class="table table-bordered table-hover">
@@ -394,6 +540,74 @@ function changeSemestre(idSemestre) {
                         <div class="alert alert-info text-center mt-3">
                             Aucune Unité d'Enseignement trouvée pour cette sélection.
                         </div>
+
+                        <?php
+                        $sql_sources_clone = "
+                            SELECT DISTINCT
+                                s.id_semestre,
+                                s.nom_semestre,
+                                aa.id_annee,
+                                aa.date_debut,
+                                aa.date_fin,
+                                COUNT(DISTINCT ue.id_ue) AS nb_ues
+                            FROM t_unite_enseignement ue
+                            INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
+                            INNER JOIN t_semestre s ON s.id_semestre = ue.id_semestre
+                            INNER JOIN t_anne_academique aa ON aa.id_annee = s.id_annee
+                            WHERE ue.code_promotion = ?
+                              AND mu.id_mention = ?
+                              AND s.id_annee <> ?
+                            GROUP BY s.id_semestre, s.nom_semestre, aa.id_annee, aa.date_debut, aa.date_fin
+                            HAVING nb_ues > 0
+                            ORDER BY aa.date_debut DESC, s.nom_semestre ASC
+                        ";
+                        $stmt_sources_clone = $pdo->prepare($sql_sources_clone);
+                        $stmt_sources_clone->execute([$promotion_code, $mention_id, $id_annee]);
+                        $sources_clone = $stmt_sources_clone->fetchAll(PDO::FETCH_ASSOC);
+                        ?>
+
+                        <?php if (!empty($sources_clone)): ?>
+                            <div class="card border-warning mt-3">
+                                <div class="card-body">
+                                    <h5 class="card-title mb-3">
+                                        <i class="fas fa-copy me-2"></i>Suggestion : cloner depuis une année passée
+                                    </h5>
+                                    <p class="text-muted mb-3">
+                                        Aucun programme n'existe pour ce semestre. Vous pouvez cloner des UE/EC depuis une année précédente.
+                                        Les éléments clonés seront créés avec <strong>is_programmed = 0</strong>.
+                                    </p>
+                                    <form method="POST" action="">
+                                        <input type="hidden" name="clone_semestre_cible" value="<?php echo (int) $id_semestre; ?>">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-md-8">
+                                                <label for="clone_semestre_source" class="form-label">Semestre source</label>
+                                                <select class="form-select" id="clone_semestre_source" name="clone_semestre_source" required>
+                                                    <option value="">-- Choisir un semestre à cloner --</option>
+                                                    <?php foreach ($sources_clone as $source): ?>
+                                                        <option value="<?php echo (int) $source['id_semestre']; ?>">
+                                                            <?php
+                                                            echo htmlspecialchars(
+                                                                $source['nom_semestre']
+                                                                . ' | Année ' . date('Y', strtotime($source['date_debut']))
+                                                                . '-' . date('Y', strtotime($source['date_fin']))
+                                                                . ' | ' . (int) $source['nb_ues'] . ' UE'
+                                                            );
+                                                            ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4 d-grid">
+                                                <button type="submit" class="btn btn-warning"
+                                                    onclick="return confirm('Cloner les UE/EC dans ce semestre avec is_programmed=0 ?');">
+                                                    <i class="fas fa-clone me-1"></i> Cloner le programme
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                     <?php if (!empty($ues)): ?>
                         <div class="d-flex justify-content-end mb-3">

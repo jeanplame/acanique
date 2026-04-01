@@ -103,13 +103,31 @@ function getECsForPromotion($pdo, $promotion_code, $id_semestre, $mention_id)
  * @param PDO $pdo L'objet de connexion à la base de données.
  * @param string $promotion_code Le code de la promotion.
  * @param int $mention_id L'identifiant de la mention.
+ * @param int|null $id_annee L'identifiant de l'année académique (optionnel).
  * @return array Un tableau d'étudiants.
  */
-function getStudentsForPromotionAndMention($pdo, $promotion_code, $mention_id)
+function getStudentsForPromotionAndMention($pdo, $promotion_code, $mention_id, $id_annee = null)
 {
-    $sql = "SELECT * FROM vue_etudiants_mention_promotion WHERE code_promotion = ? AND id_mention = ? ORDER BY nom_etu ASC";
+    $sql = "
+        SELECT DISTINCT e.*
+        FROM vue_etudiants_mention_promotion e
+        INNER JOIN t_inscription i ON i.matricule = e.matricule
+        WHERE e.code_promotion = ?
+          AND e.id_mention = ?
+          AND i.code_promotion = e.code_promotion
+          AND i.id_mention = e.id_mention
+          AND i.statut = 'Actif'
+    ";
+
+    $params = [$promotion_code, $mention_id];
+    if (!empty($id_annee)) {
+        $sql .= " AND i.id_annee = ?";
+        $params[] = $id_annee;
+    }
+
+    $sql .= " ORDER BY e.nom_etu ASC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$promotion_code, $mention_id]);
+    $stmt->execute($params);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
