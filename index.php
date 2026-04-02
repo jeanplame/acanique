@@ -5,6 +5,8 @@ require_once 'includes/db_config.php';
 require_once 'includes/auth.php';
 require_once 'includes/page_permissions.php';
 require_once 'includes/login_logger.php';
+require_once 'includes/license_system.php';
+require_once 'includes/payment_system.php';
 
 // Générer le token CSRF si il n'existe pas
 if (!isset($_SESSION['csrf_token'])) {
@@ -41,6 +43,7 @@ if (isset($_GET['page']) && $_GET['page'] === 'logout') {
 $page = $_GET['page'] ?? 'dashboard';
 $action = $_GET['action'] ?? 'list';
 $id = $_GET['id'] ?? null;
+$publicPages = ['login', 'logout'];
 
 // Traiter la connexion si nécessaire
 if ($page === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -114,25 +117,43 @@ if ($page === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Vérification de l'authentification pour les pages protégées
-if (!isLoggedIn() && $page !== 'login') {
+if (!isLoggedIn() && !in_array($page, $publicPages, true)) {
     // Vider le tampon avant la redirection
     ob_end_clean();
     header("Location: ?page=login");
     exit();
 }
 
+if (isLoggedIn()) {
+    licenseBootstrap($pdo);
+
+    // Tant que la licence n'est pas active, forcer l'écran d'activation.
+    if (isLicenseActivationRequired($pdo) && !in_array($page, ['activation', 'logout'], true)) {
+        ob_end_clean();
+        header("Location: ?page=activation");
+        exit();
+    }
+
+    // Si la licence est déjà active, inutile de rester sur la page d'activation.
+    if (!isLicenseActivationRequired($pdo) && $page === 'activation') {
+        ob_end_clean();
+        header("Location: ?page=dashboard");
+        exit();
+    }
+}
+
 // Nettoyage automatique du cache des permissions
-if ($page !== 'login') {
+if (!in_array($page, ['login', 'activation'], true)) {
     autoCleanPermissionsCache($pdo);
 }
 
 // Vérification des permissions pour la page demandée (sans bloquer)
-if ($page !== 'login') {
+if (!in_array($page, ['login', 'activation'], true)) {
     checkPagePermission($pdo, $page);
 }
 
 // Inclusion du header pour les pages authentifiées
-if ($page !== 'login') {
+if (!in_array($page, ['login', 'activation'], true)) {
     require_once 'includes/header.php';
 }
 
@@ -172,6 +193,9 @@ switch ($page) {
     
     case 'login':
         $page_path = 'pages/login.php';
+        break;
+    case 'activation':
+        $page_path = 'pages/activation.php';
         break;
     case 'domaine':
         switch ($action) {
