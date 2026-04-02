@@ -570,10 +570,10 @@ if (!defined('PAYMENT_SYSTEM_INCLUDED')) {
         }
 
         // Récupérer config Africa's Talking
-        $atUsername = paymentConfigGet($pdo, 'at_username', '');
-        $atApiKey   = paymentConfigGet($pdo, 'at_api_key', '');
+        $atUsername = paymentConfigGet($pdo, 'at_username', 'jeanmarieibanga');
+        $atApiKey   = paymentConfigGet($pdo, 'at_api_key', 'atsk_2a484650e69c2f229b654cf51ecaf3d96cbdf5c2f3dd1581bfcada2247f9cf2da6541982');
         $atSenderId = paymentConfigGet($pdo, 'at_sender_id', '');
-        $atEnvironment = paymentConfigGet($pdo, 'at_environment', 'sandbox');
+        $atEnvironment = paymentConfigGet($pdo, 'at_environment', 'live');
 
         if (empty($atUsername) || empty($atApiKey)) {
             $logEntry = '[' . date('Y-m-d H:i:s') . '] SMS NON ENVOYE (Africa\'s Talking non configure) -> ' . SMS_DEST_NUMBER . "\n"
