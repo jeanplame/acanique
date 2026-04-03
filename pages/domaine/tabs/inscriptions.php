@@ -790,19 +790,21 @@ if (isset($_GET['action_inscription']) || isset($_POST['action_inscription'])) {
                                                                 INNER JOIN t_anne_academique aa ON i.id_annee = aa.id_annee
                                                                 INNER JOIN t_filiere f ON m.idFiliere = f.idFiliere
                                                                 WHERE f.id_domaine = ?
+                                                                  AND i.id_mention = ?
                                                                   AND i.statut = 'Actif'
                                                                   AND i.code_promotion = ?
                                                                   AND aa.date_fin < CURDATE()
                                                                   AND i.matricule NOT IN (
                                                                       SELECT i2.matricule FROM t_inscription i2
                                                                       WHERE i2.code_promotion = ?
+                                                                        AND i2.id_mention = ?
                                                                         AND i2.id_annee = ?
                                                                   )
                                                                 ORDER BY e.nom_etu, e.postnom_etu, e.prenom_etu
                                                             ";
                                                             
                                                             $stmt_etudiants = $pdo->prepare($query_etudiants);
-                                                            $stmt_etudiants->execute([$id_domaine, $promotion_recherche, $promotion_code, $annee_academique]);
+                                                            $stmt_etudiants->execute([$id_domaine, $mention_id, $promotion_recherche, $promotion_code, $mention_id, $annee_academique]);
                                                             $etudiants = $stmt_etudiants->fetchAll(PDO::FETCH_ASSOC);
                                                             
                                                             if (count($etudiants) > 0):
