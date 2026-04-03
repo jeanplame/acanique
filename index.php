@@ -190,6 +190,9 @@ switch ($page) {
     case 'jury_nomination':
         $page_path = 'pages/jury_nomination.php';
         break;
+    case 'publication_resultats':
+        $page_path = 'pages/admin/publication_resultats.php';
+        break;
     
     case 'login':
         $page_path = 'pages/login.php';

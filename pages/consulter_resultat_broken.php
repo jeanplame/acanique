@@ -1,11 +1,32 @@
 <?php
 
+header('Location: consulter_resultat.php', true, 302);
+exit;
+
 /**
  * SYSTÈME DE CONSULTATION DES RÉSULTATS - VERSION STABLE V3
  * Simple, robuste, fonctionnelle
  */
 
-require_once __DIR__ . '/../includes/db_config.php';
+$dbConfigCandidates = [
+    __DIR__ . '/../_sync/db_config_sync.php',
+    __DIR__ . '/../includes/db_config.php',
+    __DIR__ . '/includes/db_config.php',
+    __DIR__ . '/_sync/db_config_sync.php',
+];
+
+$dbConfigLoaded = false;
+foreach ($dbConfigCandidates as $dbConfigFile) {
+    if (file_exists($dbConfigFile)) {
+        require_once $dbConfigFile;
+        $dbConfigLoaded = true;
+        break;
+    }
+}
+
+if (!$dbConfigLoaded) {
+    die('Configuration base de donnees introuvable.');
+}
 
 $conn = null;
 $error_message = "";
@@ -13,6 +34,8 @@ $success_message = "";
 $student_data = null;
 $results = [];
 $inscription_data = null;
+$publication_active = true;
+$publication_message = "La consultation des resultats est temporairement suspendue. Veuillez reessayer plus tard.";
 
 // Connexion
 try {
@@ -49,8 +72,29 @@ try {
     error_log("[CONSULTER_RESULTAT] Error fetching current academic year: " . $e->getMessage());
 }
 
+// Etat de publication publique des resultats
+try {
+    if ($conn) {
+        $stmt_publication = $conn->prepare("SELECT cle, valeur FROM t_configuration WHERE cle IN ('resultats_publication_active', 'resultats_publication_message')");
+        $stmt_publication->execute();
+        $publication_config = $stmt_publication->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        if (isset($publication_config['resultats_publication_active'])) {
+            $publication_active = $publication_config['resultats_publication_active'] === '1';
+        }
+
+        if (!empty($publication_config['resultats_publication_message'])) {
+            $publication_message = $publication_config['resultats_publication_message'];
+        }
+    }
+} catch (Exception $e) {
+    error_log("[CONSULTER_RESULTAT] Error fetching publication status: " . $e->getMessage());
+}
+
 // Traitement de la recherche
-if (isset($_POST['matricule']) && !empty($_POST['matricule']) && $conn) {
+if (!$publication_active && isset($_POST['matricule'])) {
+    $error_message = $publication_message;
+} elseif ($publication_active && isset($_POST['matricule']) && !empty($_POST['matricule']) && $conn) {
     $matricule = trim($_POST['matricule']);
     
     if (!preg_match('/^[A-Za-z0-9]+$/', $matricule)) {
@@ -318,11 +362,16 @@ if (isset($_POST['matricule']) && !empty($_POST['matricule']) && $conn) {
             <div class="col-md-6">
                 <div class="card p-4">
                     <h3 class="text-center mb-3 fw-bold">Consultation des Notes</h3>
+                    <?php if (!$publication_active): ?>
+                        <div class="alert alert-warning mb-3">
+                            <i class="fas fa-pause-circle"></i> <?php echo htmlspecialchars($publication_message); ?>
+                        </div>
+                    <?php endif; ?>
                     <form method="POST" class="d-flex gap-2">
                         <input type="text" name="matricule" class="form-control form-control-lg"
-                            placeholder="Entrez votre matricule..." required
+                            placeholder="Entrez votre matricule..." <?php echo !$publication_active ? 'disabled' : ''; ?> required
                             value="<?php echo isset($_POST['matricule']) ? htmlspecialchars($_POST['matricule']) : ''; ?>">
-                        <button type="submit" class="btn btn-primary btn-lg px-4">
+                        <button type="submit" class="btn btn-primary btn-lg px-4" <?php echo !$publication_active ? 'disabled' : ''; ?>>
                             <i class="fas fa-search"></i> Chercher
                         </button>
                     </form>

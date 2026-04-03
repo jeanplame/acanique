@@ -1,4 +1,4 @@
-﻿<?php
+<?php
     header('Content-Type: text/html; charset=UTF-8');
 // tabs/cotation.php
 // Ce fichier est inclus dans notes.php et gère l'affichage et la logique de la fiche de cotation.
@@ -477,22 +477,18 @@ $id_semestre = trim((string)$id_semestre);
                     </style>
                     <?php foreach ($ues as $ue): ?>
                         <?php if (!empty($ue['ecs'])): ?>
-                            <!-- En-tete UE avec ses ECs -->
-                            <div class="list-group-item fw-bold text-white" style="background-color: #05435f; font-size: 0.85em; padding: 6px 10px; cursor: default;">
-                                <i class="fas fa-folder-open me-1"></i> <?= htmlspecialchars($ue['ue']['code_ue'] . ' - ' . $ue['ue']['libelle_ue']) ?>
-                                <span class="badge bg-light text-dark float-end"><?= count($ue['ecs']) ?> EC</span>
-                            </div>
+                            <!-- Si l’UE a des EC, on affiche uniquement les EC -->
                             <?php foreach ($ue['ecs'] as $ec): ?>
                                 <a href="?page=domaine&action=view&id=<?php echo htmlspecialchars($id_domaine); ?>&mention=<?php echo htmlspecialchars($mentio); ?>&tab=notes&promotion=<?php echo htmlspecialchars($prom1); ?>&annee=<?php echo htmlspecialchars($id_annee); ?>&tabnotes=cotation&semestre=<?php echo htmlspecialchars($semestr); ?>&ec=<?php echo htmlspecialchars($ec['id_ec']); ?><?php echo $mode_rattrapage ? '&rattrapage=1' : ''; ?>"
-                                    class="list-group-item list-group-item-action <?= ($selected_ec_id == $ec['id_ec']) ? 'active' : '' ?>" style="padding-left: 25px; font-size: 0.9em;">
-                                    <i class="fas fa-file-alt me-1 text-muted"></i> <?= htmlspecialchars($ec['code_ec'] . ' - ' . $ec['libelle_ec']) ?>
+                                    class="list-group-item list-group-item-action">
+                                    <?= htmlspecialchars($ec['code_ue'] . ' - ' . $ec['libelle_ue'] . ' (' . $ec['libelle_ec'] . ')') ?>
                                 </a>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <!-- UE sans EC : cliquable directement -->
+                            <!-- Si l'UE n'a aucun EC, on affiche l'UE directement -->
                             <a href="?page=domaine&action=view&id=<?php echo htmlspecialchars($id_domaine); ?>&mention=<?php echo htmlspecialchars($mentio); ?>&tab=notes&promotion=<?php echo htmlspecialchars($prom1); ?>&annee=<?php echo htmlspecialchars($id_annee); ?>&tabnotes=cotation&semestre=<?php echo htmlspecialchars($semestr); ?>&ue=<?php echo htmlspecialchars($ue['ue']['id_ue']); ?><?php echo $mode_rattrapage ? '&rattrapage=1' : ''; ?>"
-                                class="list-group-item list-group-item-action <?= ($selected_ue_id == $ue['ue']['id_ue']) ? 'active' : '' ?>" style="background-color: #05435f; color: white; font-size: 0.85em;">
-                                <i class="fas fa-book me-1"></i> <?= htmlspecialchars($ue['ue']['code_ue'] . ' - ' . $ue['ue']['libelle_ue']) ?>
+                                class="list-group-item list-group-item-action bg-secondary text-white">
+                                <?= htmlspecialchars($ue['ue']['code_ue'] . ' - ' . $ue['ue']['libelle_ue']) ?>
                             </a>
                         <?php endif; ?>
                     <?php endforeach; ?>

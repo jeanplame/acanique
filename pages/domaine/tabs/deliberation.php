@@ -814,55 +814,9 @@ function calcCoefsValides($notes, $ues)
 // Total des crédits validés pour un étudiant
 function calcCreditsValides($notes, $ues)
 {
-    $totalCredits = 0;
-    foreach ($ues as $codeUE => $ue) {
-        // Détecter si UE est sans EC ou plein d'EC placeholders
-        $isUeSansEc = true;
-        foreach ($ue['ecs'] as $ec) {
-            if (empty($ec['is_ue_sans_ec'])) {
-                $isUeSansEc = false;
-                break;
-            }
-        }
-
-        if ($isUeSansEc) {
-            // UE sans EC → validation sur la note UE (ou placeholder EC) avec crédit UE
-            $noteS1 = $notes[$codeUE]['ue']['s1'] ?? null;
-            $noteS2 = $notes[$codeUE]['ue']['s2'] ?? null;
-
-            if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
-                $totalCredits += $ue['credits'];
-            }
-            continue;
-        }
-
-        // UE avec EC normaux --> validation UEs par au moins un EC validé
-        $ueValidee = false;
-        foreach ($ue['ecs'] as $codeEC => $ec) {
-            if (!empty($ec['is_ue_sans_ec'])) {
-                continue;
-            }
-            if (!isset($notes[$codeUE][$codeEC])) {
-                continue;
-            }
-            $noteS1 = $notes[$codeUE][$codeEC]['s1'] ?? null;
-            $noteS2 = $notes[$codeUE][$codeEC]['s2'] ?? null;
-            if (($noteS1 !== null && $noteS1 >= 10) || ($noteS2 !== null && $noteS2 >= 10)) {
-                $ueValidee = true;
-                break;
-            }
-        }
-
-        if ($ueValidee) {
-            foreach ($ue['ecs'] as $ec) {
-                if (!empty($ec['is_ue_sans_ec'])) {
-                    continue;
-                }
-                $totalCredits += $ec['coef'] ?? 1;
-            }
-        }
-    }
-    return $totalCredits;
+    $creditsS1 = calcCreditsValidesSemestreEtudiant($notes, $ues, $ues, 's1');
+    $creditsS2 = calcCreditsValidesSemestreEtudiant($notes, $ues, $ues, 's2');
+    return $creditsS1 + $creditsS2;
 }
 
 // Moyenne pondérée
@@ -915,6 +869,56 @@ function calcTotalCredits($ues)
         }
     }
     return $total;
+}
+
+// Crédits validés d'un semestre pour un étudiant:
+// une UE est validée si sa moyenne pondérée (sur ses EC programmés) >= 10,
+// puis on crédite les crédits UE (et non la somme brute des coefficients).
+function calcCreditsValidesSemestreEtudiant($notesEtudiant, $uesSemestre, $uesReference, $noteKey)
+{
+    $creditsValides = 0;
+
+    foreach ($uesSemestre as $codeUE => $ueSem) {
+        // Crédits effectifs de l'UE dans le semestre: somme des EC programmés.
+        // Si UE sans EC, on garde son crédit UE.
+        $creditsUEEffectifs = 0;
+        foreach (($ueSem['ecs'] ?? []) as $ec) {
+            $poids = !empty($ec['is_ue_sans_ec'])
+                ? (float) ($ec['credits'] ?? ($uesReference[$codeUE]['credits'] ?? $ueSem['credits'] ?? 0))
+                : (float) ($ec['coef'] ?? 1);
+            if ($poids > 0) {
+                $creditsUEEffectifs += $poids;
+            }
+        }
+
+        if ($creditsUEEffectifs <= 0) {
+            continue;
+        }
+
+        $totalPondere = 0;
+
+        foreach (($ueSem['ecs'] ?? []) as $codeEC => $ec) {
+            $note = $notesEtudiant[$codeUE][$codeEC][$noteKey] ?? null;
+            $poids = !empty($ec['is_ue_sans_ec'])
+                ? (float) ($ec['credits'] ?? $creditsUEEffectifs)
+                : (float) ($ec['coef'] ?? 1);
+
+            if ($poids <= 0) {
+                continue;
+            }
+
+            // Note manquante ou invalide = 0 (la pondération reste comptée)
+            $noteNumerique = (is_numeric($note) && $note > 0) ? (float) $note : 0.0;
+            $totalPondere += $noteNumerique * $poids;
+        }
+
+        $moyenneUE = $totalPondere / $creditsUEEffectifs;
+        if ($moyenneUE >= 10) {
+            $creditsValides += $creditsUEEffectifs;
+        }
+    }
+
+    return $creditsValides;
 }
 
 ?>
@@ -1710,27 +1714,7 @@ function calcTotalCredits($ues)
                             }
                         }
                     }
-                    // Crédits validés S1 : moyenne pondérée UE = somme(note_ec * coef_ec) / credits_ue >= 10
-                    $creditsS1 = 0;
-                    foreach ($ues_s1 as $codeUE => $ue) {
-                        $totalPondereUE = 0;
-                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
-                        $aDesNotes = false;
-                        foreach ($ue['ecs'] as $codeEC => $ec) {
-                            $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
-                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
-                            if ($val !== null && is_numeric($val) && $val > 0) {
-                                $totalPondereUE += $val * $coef;
-                                $aDesNotes = true;
-                            }
-                        }
-                        if ($aDesNotes && $creditsUE > 0) {
-                            $moyenneUE = $totalPondereUE / $creditsUE;
-                            if ($moyenneUE >= 10) {
-                                $creditsS1 += $creditsUE;
-                            }
-                        }
-                    }
+                    $creditsS1 = calcCreditsValidesSemestreEtudiant($data['notes'], $ues_s1, $ues, 's1');
                     $moyS1 = $totalCoefS1 > 0 ? $totalS1 / $totalCoefS1 : 0;
                     ?>
                     <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($totalS1, 0); ?></td>
@@ -1843,27 +1827,7 @@ function calcTotalCredits($ues)
                             }
                         }
                     }
-                    // Crédits validés S2 : moyenne pondérée UE = somme(note_ec * coef_ec) / credits_ue >= 10
-                    $creditsS2 = 0;
-                    foreach ($ues_s2 as $codeUE => $ue) {
-                        $totalPondereUE = 0;
-                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
-                        $aDesNotes = false;
-                        foreach ($ue['ecs'] as $codeEC => $ec) {
-                            $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
-                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
-                            if ($val !== null && is_numeric($val) && $val > 0) {
-                                $totalPondereUE += $val * $coef;
-                                $aDesNotes = true;
-                            }
-                        }
-                        if ($aDesNotes && $creditsUE > 0) {
-                            $moyenneUE = $totalPondereUE / $creditsUE;
-                            if ($moyenneUE >= 10) {
-                                $creditsS2 += $creditsUE;
-                            }
-                        }
-                    }
+                    $creditsS2 = calcCreditsValidesSemestreEtudiant($data['notes'], $ues_s2, $ues, 's2');
                     $moyS2 = $totalCoefS2 > 0 ? $totalS2 / $totalCoefS2 : 0;
                     ?>
                     <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($totalS2, 0); ?></td>
@@ -1878,112 +1842,50 @@ function calcTotalCredits($ues)
                 <?php endif; ?>
 
                 <?php if ($afficher_tous):
-                    // Calculer les variables manquantes pour S1 et S2
-                    if (!isset($totalS1)) {
-                        $totalS1 = 0;
-                        $totalCoefS1 = 0;
-                        foreach ($ues_s1 as $codeUE => $ue) {
-                            foreach ($ue['ecs'] as $codeEC => $ec) {
-                                $val = null;
-                                if (isset($data['notes'][$codeUE][$codeEC])) {
-                                    $val = $data['notes'][$codeUE][$codeEC]['s1'];
-                                }
-                                if (!is_null($val) && $val > 0) {
-                                    $totalS1 += $val * $ec['coef'];
-                                    $totalCoefS1 += $ec['coef'];
-                                }
-                            }
-                        }
-
-                    }
-
-                    if (!isset($totalS2)) {
-                        $totalS2 = 0;
-                        $totalCoefS2 = 0;
-                        foreach ($ues_s2 as $codeUE => $ue) {
-                            foreach ($ue['ecs'] as $codeEC => $ec) {
-                                $val = null;
-                                if (isset($data['notes'][$codeUE][$codeEC])) {
-                                    $val = $data['notes'][$codeUE][$codeEC]['s2'];
-                                }
-                                if (!is_null($val) && $val > 0) {
-                                    $totalS2 += $val * $ec['coef'];
-                                    $totalCoefS2 += $ec['coef'];
-                                }
-                            }
-                        }
-                    }
-
                     // Calcul des crédits validés pour les vues "tous" (S1 + S2 combinés)
                     $creditsValides_S1 = 0;
                     $creditsValides_S2 = 0;
                     
-                    // Calcul des crédits S1 validés : moyenne pondérée UE >= 10
-                    foreach ($ues_s1 as $codeUE => $ue) {
-                        $totalPondereUE = 0;
-                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
-                        $aDesNotes = false;
-                        foreach ($ue['ecs'] as $codeEC => $ec) {
-                            $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
-                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
-                            if ($val !== null && is_numeric($val) && $val > 0) {
-                                $totalPondereUE += $val * $coef;
-                                $aDesNotes = true;
-                            }
-                        }
-                        if ($aDesNotes && $creditsUE > 0) {
-                            $moyenneUE = $totalPondereUE / $creditsUE;
-                            if ($moyenneUE >= 10) {
-                                $creditsValides_S1 += $creditsUE;
-                            }
-                        }
-                    }
-                    
-                    // Calcul des crédits S2 validés : moyenne pondérée UE >= 10
-                    foreach ($ues_s2 as $codeUE => $ue) {
-                        $totalPondereUE = 0;
-                        $creditsUE = $ues[$codeUE]['credits'] ?? 0;
-                        $aDesNotes = false;
-                        foreach ($ue['ecs'] as $codeEC => $ec) {
-                            $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
-                            $coef = isset($ec['is_ue_sans_ec']) && $ec['is_ue_sans_ec'] ? ($ec['credits'] ?? $ue['credits'] ?? 1) : ($ec['coef'] ?? 1);
-                            if ($val !== null && is_numeric($val) && $val > 0) {
-                                $totalPondereUE += $val * $coef;
-                                $aDesNotes = true;
-                            }
-                        }
-                        if ($aDesNotes && $creditsUE > 0) {
-                            $moyenneUE = $totalPondereUE / $creditsUE;
-                            if ($moyenneUE >= 10) {
-                                $creditsValides_S2 += $creditsUE;
-                            }
-                        }
-                    }
+                    $creditsValides_S1 = calcCreditsValidesSemestreEtudiant($data['notes'], $ues_s1, $ues, 's1');
+                    $creditsValides_S2 = calcCreditsValidesSemestreEtudiant($data['notes'], $ues_s2, $ues, 's2');
 
-                    // Moyenne annuelle
-                    $moyennes = [];
-                    foreach ($data['notes'] as $ecs) {
-                        foreach ($ecs as $note) {
-                            if (!is_null($note['moy']))
-                                $moyennes[] = $note['moy'];
-                        }
-                    }
-                    $moyAnn = count($moyennes) ? array_sum($moyennes) / count($moyennes) : 0;
                     $totalCreditsValides = $creditsValides_S1 + $creditsValides_S2;
 
                     // Total des notes pondérées annuelles (S1 + S2)
                     $totalNotesAnnuel = $totalS1 + $totalS2;
 
-                    // Calcul du pourcentage - utiliser la variable correcte
-                    $pourcent = ($maxTotalNotesAnnuel > 0) ? ($totalNotesAnnuel / $maxTotalNotesAnnuel) * 100 : 0;
-
                     // Calcul de la moyenne annuelle basée sur les moyennes semestrielles
-                    $totalCoefAnnuelEtudiant = $creditsS1 + $creditsS2;
+                    $totalCoefAnnuelEtudiant = $creditsS1 + $creditsS2; // crédits validés affichés
                     $moyAnnPonderee = 0;
                     $totalCoefAnnuel = $totalCoefS1 + $totalCoefS2;
                     if ($totalCoefAnnuel > 0) {
                         $moyAnnPonderee = ($totalS1 + $totalS2) / $totalCoefAnnuel;
                     }
+
+                    // Pourcentage d'acquisition des crédits (aligné avec le palmarès)
+                    // Dénominateur annuel = volume effectivement programmé sur S1+S2
+                    $totalCreditsPrevus = $totalCoefAnnuel;
+                    $pourcent = ($totalCreditsPrevus > 0) ? ($totalCreditsValides / $totalCreditsPrevus) * 100 : 0;
+
+                    // Décision harmonisée: ADMIS si au plus 2 échecs (<10)
+                    $nombreEchecs = 0;
+                    foreach ($ues_s1 as $codeUE => $ue) {
+                        foreach ($ue['ecs'] as $codeEC => $ec) {
+                            $val = $data['notes'][$codeUE][$codeEC]['s1'] ?? null;
+                            if ($val !== null && $val > 0 && $val < 10) {
+                                $nombreEchecs++;
+                            }
+                        }
+                    }
+                    foreach ($ues_s2 as $codeUE => $ue) {
+                        foreach ($ue['ecs'] as $codeEC => $ec) {
+                            $val = $data['notes'][$codeUE][$codeEC]['s2'] ?? null;
+                            if ($val !== null && $val > 0 && $val < 10) {
+                                $nombreEchecs++;
+                            }
+                        }
+                    }
+                    $decisionFinale = ($nombreEchecs <= 2) ? 'ADMIS' : 'AJOURNÉ';
                     ?>
                     <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($moyAnnPonderee, 1); ?></td>
                     <td style="background:#bdbdbd; font-weight:bold;"><?php echo $totalCoefAnnuelEtudiant; ?></td>
@@ -1991,13 +1893,7 @@ function calcTotalCredits($ues)
                     <td style="background:#bdbdbd; font-weight:bold;"><?php echo number_format($pourcent, 1); ?>%</td>
                     <td style="background:#bdbdbd; font-weight:bold;"><?php echo getMention($moyAnnPonderee); ?></td>
                     <td style="background:#bdbdbd; font-weight:bold; border-right: #000 3px solid;">
-                        <?php
-                        if ($moyAnnPonderee >= 10) {
-                            echo "ADMIS";
-                        } else {
-                            echo "AJOURNÉ";
-                        }
-                        ?>
+                        <?php echo $decisionFinale; ?>
                     </td>
                 <?php endif; ?>
             </tr>

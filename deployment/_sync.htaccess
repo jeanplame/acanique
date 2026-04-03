@@ -1,0 +1,20 @@
+# Protect _sync folder while allowing only import_sync.php
+Options -Indexes
+
+# Apache 2.4+
+<IfModule mod_authz_core.c>
+    Require all denied
+    <Files "import_sync.php">
+        Require all granted
+    </Files>
+</IfModule>
+
+# Apache 2.2 fallback
+<IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+    <Files "import_sync.php">
+        Order Allow,Deny
+        Allow from all
+    </Files>
+</IfModule>

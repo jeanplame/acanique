@@ -195,6 +195,20 @@ if ($ue_sub_tab === 'ajouter' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!empty($code_ue) && !empty($libelle) && $credits > 0) {
 
+        // Empêcher les doublons UE pour la même mention/promotion
+        $sql_check_ue_dup = "
+            SELECT ue.id_ue
+            FROM t_unite_enseignement ue
+            INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
+            WHERE ue.code_promotion = ? AND mu.id_mention = ? AND ue.code_ue = ?
+            LIMIT 1
+        ";
+        $stmt_check_ue_dup = $pdo->prepare($sql_check_ue_dup);
+        $stmt_check_ue_dup->execute([$promotion_code, $mention_id, $code_ue]);
+        if ($stmt_check_ue_dup->fetchColumn()) {
+            echo '<div class="alert alert-warning">Cette UE existe déjà pour cette mention/promotion.</div>';
+        } else {
+
         $pdo->beginTransaction();
 
         // 1. Insertion dans t_unite_enseignement
@@ -204,7 +218,7 @@ if ($ue_sub_tab === 'ajouter' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt_ue = $pdo->prepare($sql_insert_ue);
         $stmt_ue->execute([
             $promotion_code,
-            $id_semestre,
+            null,
             $code_ue,
             $libelle,
             $credits,
@@ -217,11 +231,13 @@ if ($ue_sub_tab === 'ajouter' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // 2. Lier à la mention via t_mention_ue
         $sql_link_ue = "INSERT INTO t_mention_ue (id_mention, id_ue, semestre) VALUES (?, ?, ?)";
         $stmt_link_ue = $pdo->prepare($sql_link_ue);
-        $stmt_link_ue->execute([$mention_id, $id_ue, $id_semestre]);
+        $stmt_link_ue->execute([$mention_id, $id_ue, null]);
 
         $pdo->commit();
 
         echo '<div class="alert alert-success">UE ajoutée avec succès (' . $credits . ' crédits).</div>';
+
+        }
 
     } else {
         echo '<div class="alert alert-warning">Veuillez remplir tous les champs obligatoires.</div>';
@@ -242,6 +258,14 @@ if ($ue_sub_tab === 'gerer_ec' && $_SERVER['REQUEST_METHOD'] === 'POST' && !empt
     if (!empty($code_ec) && !empty($libelle_ec) && $coefficient > 0) {
         try {
             $pdo->beginTransaction();
+
+            // Empêcher les doublons EC (même code_ec dans la même UE)
+            $sql_check_ec_dup = "SELECT id_ec FROM t_element_constitutif WHERE id_ue = ? AND code_ec = ? LIMIT 1";
+            $stmt_check_ec_dup = $pdo->prepare($sql_check_ec_dup);
+            $stmt_check_ec_dup->execute([$id_ue, $code_ec]);
+            if ($stmt_check_ec_dup->fetchColumn()) {
+                throw new Exception('Cet EC existe déjà dans cette UE.');
+            }
 
             // 1. Vérifier crédits UE
             $sql_credits_ue = "SELECT credits FROM t_unite_enseignement WHERE id_ue = ?";
@@ -356,7 +380,7 @@ function changeSemestre(idSemestre) {
 }
 </script>
 
-<?php if (empty($id_semestre)): ?>
+<?php if (false && empty($id_semestre)): ?>
     <div class="alert alert-warning text-center">
         <i class="fas fa-exclamation-triangle me-2"></i>
         Veuillez sélectionner un semestre ci-dessus pour afficher les unités d'enseignement.
@@ -406,15 +430,17 @@ function changeSemestre(idSemestre) {
                 try {
                     // Requête SQL pour récupérer les UE et leurs EC
                     $sql_ues = "
-                        SELECT * FROM v_unites_enseignements WHERE id_semestre = ? AND code_promotion = ? AND id_mention = ?;
+                        SELECT * FROM v_unites_enseignements WHERE code_promotion = ? AND id_mention = ?
                     ";
+                    $params_ues = [$promotion_code, $mention_id];
+                    if (!empty($id_semestre)) {
+                        $sql_ues .= " AND id_semestre = ?";
+                        $params_ues[] = $id_semestre;
+                    }
+                    $sql_ues .= ";";
 
                     $stmt_ues = $pdo->prepare($sql_ues);
-                    $stmt_ues->execute([
-                        $id_semestre,
-                        $promotion_code,
-                        $mention_id
-                    ]);
+                    $stmt_ues->execute($params_ues);
 
                     $results = $stmt_ues->fetchAll(PDO::FETCH_ASSOC);
 
@@ -524,9 +550,14 @@ function changeSemestre(idSemestre) {
                             $sql_total_credits = "SELECT SUM(ue.credits) AS total_credits
                                 FROM t_unite_enseignement ue
                                 INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
-                                WHERE ue.code_promotion = ? AND ue.id_semestre = ? AND mu.id_mention = ?";
+                                WHERE ue.code_promotion = ? AND mu.id_mention = ?";
+                            $params_total_credits = [$promotion_code, $mention_id];
+                            if (!empty($id_semestre)) {
+                                $sql_total_credits .= " AND ue.id_semestre = ?";
+                                $params_total_credits[] = $id_semestre;
+                            }
                             $stmt_total_credits = $pdo->prepare($sql_total_credits);
-                            $stmt_total_credits->execute([$promotion_code, $id_semestre, $mention_id]);
+                            $stmt_total_credits->execute($params_total_credits);
                             $total_credits = $stmt_total_credits->fetchColumn();
                             ?>
                             <tr>
@@ -736,10 +767,15 @@ function changeSemestre(idSemestre) {
                 $sql_ues = "SELECT ue.id_ue, ue.code_ue, ue.libelle, ue.heures_th, ue.heures_td, ue.heures_tp, ue.credits
                             FROM t_unite_enseignement ue
                             INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
-                            WHERE ue.code_promotion = ? AND ue.id_semestre = ? AND mu.id_mention = ?
-                            ORDER BY ue.code_ue ASC";
+                            WHERE ue.code_promotion = ? AND mu.id_mention = ?";
+                $params_ues_ajouter = [$promotion_code, $mention_id];
+                if (!empty($id_semestre)) {
+                    $sql_ues .= " AND ue.id_semestre = ?";
+                    $params_ues_ajouter[] = $id_semestre;
+                }
+                $sql_ues .= " ORDER BY ue.code_ue ASC";
                 $stmt_ues = $pdo->prepare($sql_ues);
-                $stmt_ues->execute([$promotion_code, $id_semestre, $mention_id]);
+                $stmt_ues->execute($params_ues_ajouter);
                 $ues = $stmt_ues->fetchAll(PDO::FETCH_ASSOC);
                 ?>
 
@@ -1098,26 +1134,31 @@ function changeSemestre(idSemestre) {
                 <!-- SOUS-ONGLET: PROGRAMMATION DES UES/ECS -->
                 <?php
                 // ========================================================
-                // RÉCUPÉRER LES UES ET ECS POUR LE SEMESTRE
+                // RÉCUPÉRER LES UES ET ECS (filtre semestre optionnel)
                 // ========================================================
-                $stmt_ues = $pdo->prepare("
+                $sql_prog = "
                     SELECT 
                         ue.id_ue,
                         ue.code_ue,
                         ue.libelle,
                         ue.credits,
+                        ue.id_semestre,
                         ue.is_programmed,
                         COUNT(ec.id_ec) as nb_ecs
                     FROM t_unite_enseignement ue
                     INNER JOIN t_mention_ue mu ON mu.id_ue = ue.id_ue
                     LEFT JOIN t_element_constitutif ec ON ue.id_ue = ec.id_ue
                     WHERE ue.code_promotion = ? 
-                        AND ue.id_semestre = ?
                         AND mu.id_mention = ?
-                    GROUP BY ue.id_ue
-                    ORDER BY ue.code_ue ASC
-                ");
-                $stmt_ues->execute([$promotion_code, $id_semestre, $mention_id]);
+                ";
+                $params_prog = [$promotion_code, $mention_id];
+                if (!empty($id_semestre)) {
+                    $sql_prog .= " AND ue.id_semestre = ?";
+                    $params_prog[] = $id_semestre;
+                }
+                $sql_prog .= " GROUP BY ue.id_ue ORDER BY ue.code_ue ASC";
+                $stmt_ues = $pdo->prepare($sql_prog);
+                $stmt_ues->execute($params_prog);
                 $ues_prog = $stmt_ues->fetchAll(PDO::FETCH_ASSOC);
                 ?>
 
@@ -1134,6 +1175,9 @@ function changeSemestre(idSemestre) {
                             Cochez les unités d'enseignement et éléments constitutifs que vous souhaitez programmer pour cette année académique.
                             Les UEs/ECs programmées seront disponibles pour la saisie des notes et la délibération.
                         </p>
+                        <div class="alert alert-info py-2">
+                            Le semestre n'est plus obligatoire lors de la création d'une UE. Affectez-le ici pendant la programmation.
+                        </div>
                         
                         <div class="mb-3">
                             <button type="button" class="btn btn-success btn-sm" onclick="toggleAllUEs(true)">
@@ -1167,6 +1211,22 @@ function changeSemestre(idSemestre) {
                                                     </div>
                                                 </div>
                                                 <div class="col-auto">
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <label class="mb-0 small text-muted">Semestre</label>
+                                                        <select class="form-select form-select-sm"
+                                                                style="min-width: 180px;"
+                                                                onchange="updateUESemester(<?php echo (int) $ue['id_ue']; ?>, this.value)">
+                                                            <option value="">Non défini</option>
+                                                            <?php foreach ($semestres as $sem): ?>
+                                                                <option value="<?php echo (int) $sem['id_semestre']; ?>"
+                                                                    <?php echo ((int) ($ue['id_semestre'] ?? 0) === (int) $sem['id_semestre']) ? 'selected' : ''; ?>>
+                                                                    <?php echo htmlspecialchars($sem['nom_semestre']); ?>
+                                                                </option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="col-auto">
                                                     <small class="text-muted">
                                                         <?php echo $ue['nb_ecs']; ?> EC<?php echo $ue['nb_ecs'] > 1 ? 's' : ''; ?>
                                                     </small>
@@ -1191,7 +1251,7 @@ function changeSemestre(idSemestre) {
                                             echo '<table class="table table-sm table-hover mb-0">';
                                             echo '<thead class="table-light">';
                                             echo '<tr>';
-                                            echo '<th width="40px"></th>';
+                                            echo '<th width="110px" class="text-center">Programmer EC</th>';
                                             echo '<th>Code</th>';
                                             echo '<th>Libellé</th>';
                                             echo '<th width="120px" class="text-center">Coefficient</th>';
@@ -1205,9 +1265,11 @@ function changeSemestre(idSemestre) {
                                                 $ec_status_text = $ec['is_programmed'] ? '✓ Programmée' : '✗ Déprogrammée';
                                                 
                                                 echo '<tr>';
-                                                echo '<td>';
+                                                echo '<td class="text-center">';
                                                 echo '<input 
                                                     class="form-check-input ec-checkbox ec-checkbox-' . $ue['id_ue'] . '" 
+                                                    style="transform: scale(1.2); cursor: pointer;"
+                                                    title="Programmer / Déprogrammer cet EC"
                                                     type="checkbox" 
                                                     id="ec_' . $ec['id_ec'] . '" 
                                                     data-ec-id="' . $ec['id_ec'] . '"
@@ -1227,13 +1289,17 @@ function changeSemestre(idSemestre) {
                                             echo '</table>';
                                             echo '</div>';
                                             echo '</div>';
+                                        } else {
+                                            echo '<div class="card-body">';
+                                            echo '<div class="alert alert-warning mb-0">Aucun EC trouvé pour cette UE. Ajoutez des EC dans l\'onglet EC pour pouvoir les programmer ici.</div>';
+                                            echo '</div>';
                                         }
                                         ?>
                                     </div>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <div class="alert alert-info">
-                                    Aucune unité d'enseignement n'existe pour cette promotion et ce semestre.
+                                    Aucune unité d'enseignement n'existe pour ce filtre.
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -1253,7 +1319,7 @@ function changeSemestre(idSemestre) {
                     const ueId = checkbox.getAttribute('data-ue-id');
                     const isProgrammed = checkbox.checked ? 1 : 0;
                     
-                    fetch('/pages/domaine/ajax/handle_programmation.php', {
+                    fetch('pages/domaine/ajax/handle_programmation.php', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded',
@@ -1289,7 +1355,7 @@ function changeSemestre(idSemestre) {
                     const ecId = checkbox.getAttribute('data-ec-id');
                     const isProgrammed = checkbox.checked ? 1 : 0;
                     
-                    fetch('/pages/domaine/ajax/handle_programmation.php', {
+                    fetch('pages/domaine/ajax/handle_programmation.php', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded',
@@ -1315,11 +1381,38 @@ function changeSemestre(idSemestre) {
                     });
                 }
 
+                function updateUESemester(ueId, semestreId) {
+                    fetch('pages/domaine/ajax/handle_programmation.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            'action': 'set_ue_semestre',
+                            'id': ueId,
+                            'semestre_id': semestreId,
+                            'mention_id': '<?php echo (int) $mention_id; ?>'
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.success) {
+                            alert('Erreur : ' + (data.error || 'Impossible de mettre à jour le semestre de l\'UE'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur:', error);
+                        alert('Erreur de connexion');
+                    });
+                }
+
                 function updateECsForUE(ueId, isProgrammed) {
                     const ecCheckboxes = document.querySelectorAll(`.ec-checkbox-${ueId}`);
                     ecCheckboxes.forEach(checkbox => {
                         if (checkbox.checked !== (isProgrammed === 1)) {
                             checkbox.checked = (isProgrammed === 1);
+                            // Persister aussi le statut EC en base (pas seulement l'UI)
+                            toggleEC(checkbox);
                         }
                     });
                 }

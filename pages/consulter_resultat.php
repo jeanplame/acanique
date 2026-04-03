@@ -5,7 +5,25 @@
  * Simple, robuste, avec affichage correct des UE/EC
  */
 
-require_once __DIR__ . '/../includes/db_config.php';
+$dbConfigCandidates = [
+    __DIR__ . '/../_sync/db_config_sync.php',
+    __DIR__ . '/../includes/db_config.php',
+    __DIR__ . '/includes/db_config.php',
+    __DIR__ . '/_sync/db_config_sync.php',
+];
+
+$dbConfigLoaded = false;
+foreach ($dbConfigCandidates as $dbConfigFile) {
+    if (file_exists($dbConfigFile)) {
+        require_once $dbConfigFile;
+        $dbConfigLoaded = true;
+        break;
+    }
+}
+
+if (!$dbConfigLoaded) {
+    die('Configuration base de données introuvable.');
+}
 
 $conn = null;
 $error_message = "";
@@ -13,6 +31,8 @@ $success_message = "";
 $student_data = null;
 $results_array = [];
 $inscription_data = null;
+$publication_active = false;
+$publication_message = "La consultation des résultats est temporairement suspendue. Veuillez réessayer plus tard.";
 
 // Connexion
 try {
@@ -49,8 +69,31 @@ try {
     error_log("[CONSULTER_RESULTAT] Error fetching current academic year: " . $e->getMessage());
 }
 
+// État de publication publique des résultats
+try {
+    if ($conn) {
+        $stmt_publication = $conn->prepare("SELECT cle, valeur FROM t_configuration WHERE cle IN ('resultats_publication_active', 'resultats_publication_message')");
+        $stmt_publication->execute();
+        $publication_config = $stmt_publication->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        if (isset($publication_config['resultats_publication_active'])) {
+            $publication_active = $publication_config['resultats_publication_active'] === '1';
+        } else {
+            $publication_active = false;
+        }
+
+        if (!empty($publication_config['resultats_publication_message'])) {
+            $publication_message = $publication_config['resultats_publication_message'];
+        }
+    }
+} catch (Exception $e) {
+    error_log("[CONSULTER_RESULTAT] Error fetching publication status: " . $e->getMessage());
+}
+
 // Traitement de la recherche
-if (isset($_POST['matricule']) && !empty($_POST['matricule']) && $conn) {
+if (!$publication_active && isset($_POST['matricule'])) {
+    $error_message = $publication_message;
+} elseif ($publication_active && isset($_POST['matricule']) && !empty($_POST['matricule']) && $conn) {
     $matricule = trim($_POST['matricule']);
 
     if (!preg_match('/^[A-Za-z0-9]+$/', $matricule)) {
@@ -965,15 +1008,22 @@ if (isset($_POST['matricule']) && !empty($_POST['matricule']) && $conn) {
                     <div class="search-card">
                         <p class="search-title" style="text-align: center;">Votre relevé de notes</p>
                         <p class="search-sub" style="text-align: center;">Entrez votre numéro de matricule pour accéder à vos résultats académiques.</p>
+                        <?php if (!$publication_active): ?>
+                            <div class="alert alert-warning" style="margin-bottom: 12px;">
+                                <i class="fas fa-pause-circle"></i>
+                                <?php echo htmlspecialchars($publication_message); ?>
+                            </div>
+                        <?php endif; ?>
                         <form method="POST" class="search-row">
                             <input
                                 type="text"
                                 name="matricule"
                                 class="search-input"
                                 placeholder="Ex. : ETUXXXXXX"
+                                <?php echo !$publication_active ? 'disabled' : ''; ?>
                                 required
                                 value="<?php echo isset($_POST['matricule']) ? htmlspecialchars($_POST['matricule']) : ''; ?>">
-                            <button type="submit" class="btn-search">
+                            <button type="submit" class="btn-search" <?php echo !$publication_active ? 'disabled' : ''; ?>>
                                 <i class="fas fa-search" style="font-size:13px;"></i>
                                 Rechercher
                             </button>

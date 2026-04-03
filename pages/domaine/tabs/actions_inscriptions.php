@@ -307,7 +307,61 @@ elseif ($action === 'inscrire' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ============================================================================
-// DÉSINSCRIPTION
+// SUPPRESSION MULTIPLE D'INSCRIPTIONS
+// ============================================================================
+elseif ($action === 'desinscrire_multiple' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        $ids = $_POST['selected_inscriptions'] ?? [];
+        if (!is_array($ids) || empty($ids)) {
+            $_SESSION['error'] = "Erreur: Aucun étudiant sélectionné pour la suppression.";
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit;
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($v) => $v > 0)));
+        if (empty($ids)) {
+            $_SESSION['error'] = "Erreur: Sélection invalide.";
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit;
+        }
+
+        $pdo->beginTransaction();
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql_delete = "
+            DELETE FROM t_inscription
+            WHERE id_inscription IN ($placeholders)
+              AND id_mention = ?
+              AND code_promotion = ?
+              AND id_annee = ?
+        ";
+        $stmt_delete = $pdo->prepare($sql_delete);
+        $params = array_merge($ids, [$mention_id, $promotion_code, $annee_academique]);
+        $stmt_delete->execute($params);
+
+        $deleted = $stmt_delete->rowCount();
+        $pdo->commit();
+
+        if ($deleted > 0) {
+            $_SESSION['success'] = "$deleted inscription(s) supprimée(s) avec succès.";
+        } else {
+            $_SESSION['error'] = "Aucune inscription n'a été supprimée (éléments introuvables ou hors filtre courant).";
+        }
+
+        header("Location: ?page=domaine&action=view&id=$id_domaine&mention=$mention_id&tab=inscriptions&promotion=$promotion_code&annee=$annee_academique&sub_tab=liste");
+        exit;
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $_SESSION['error'] = "Erreur lors de la suppression multiple : " . htmlspecialchars($e->getMessage());
+        header("Location: " . $_SERVER['HTTP_REFERER']);
+        exit;
+    }
+}
+
+// ============================================================================
+// DÉSINSCRIPTION (SUPPRESSION SIMPLE)
 // ============================================================================
 elseif ($action === 'desinscrire' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -319,18 +373,19 @@ elseif ($action === 'desinscrire' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // Mettre à jour le statut de l'inscription
-        $stmt = $pdo->prepare("
-            UPDATE t_inscription 
-            SET statut = 'Inactif',
-                date_mise_a_jour = NOW()
+        // Supprimer l'inscription ciblée dans le périmètre courant
+        $stmt = $pdo->prepare(" 
+            DELETE FROM t_inscription 
             WHERE id_inscription = ?
+              AND id_mention = ?
+              AND code_promotion = ?
+              AND id_annee = ?
         ");
         
-        $stmt->execute([$id_inscription]);
+        $stmt->execute([$id_inscription, $mention_id, $promotion_code, $annee_academique]);
         
         if ($stmt->rowCount() > 0) {
-            $_SESSION['success'] = "Étudiant désinscrit avec succès !";
+            $_SESSION['success'] = "Inscription supprimée avec succès !";
         } else {
             $_SESSION['error'] = "Erreur: Inscription introuvable.";
         }
@@ -340,6 +395,173 @@ elseif ($action === 'desinscrire' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         
     } catch (PDOException $e) {
         $_SESSION['error'] = "Erreur lors de la désinscription : " . htmlspecialchars($e->getMessage());
+        header("Location: " . $_SERVER['HTTP_REFERER']);
+        exit;
+    }
+}
+
+// ============================================================================
+// DÉPLACEMENT D'INSCRITS (CHANGEMENT MENTION/PROMOTION)
+// ============================================================================
+elseif ($action === 'deplacer' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        $new_mention_id = filter_input(INPUT_POST, 'depl_mention_dest', FILTER_VALIDATE_INT);
+        if (!$new_mention_id) {
+            $new_mention_id = filter_input(INPUT_POST, 'new_mention_id', FILTER_VALIDATE_INT);
+        }
+
+        $new_promotion_code = trim($_POST['depl_promo_dest'] ?? '');
+        if (empty($new_promotion_code)) {
+            $new_promotion_code = trim($_POST['new_promotion_code'] ?? '');
+        }
+
+        $etudiants = $_POST['etudiants_deplacer'] ?? $_POST['etudiants'] ?? [];
+        
+        // Validation
+        if (!$new_mention_id || empty($new_promotion_code)) {
+            $_SESSION['error'] = "Erreur: nouvelle mention et promotion sont obligatoires.";
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit;
+        }
+        
+        if (empty($etudiants) || !is_array($etudiants)) {
+            $_SESSION['error'] = "Erreur: Aucun étudiant sélectionné.";
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit;
+        }
+        
+        // Vérifier que le nouvelle mention exist e
+        $stmt_check_mention = $pdo->prepare("SELECT id_mention FROM t_mention WHERE id_mention = ?");
+        $stmt_check_mention->execute([$new_mention_id]);
+        if (!$stmt_check_mention->fetch()) {
+            $_SESSION['error'] = "Erreur: Nouvelle mention inexistante.";
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit;
+        }
+        
+        // Vérifier promotion
+        $stmt_check_promo = $pdo->prepare("SELECT code_promotion FROM t_promotion WHERE code_promotion = ?");
+        $stmt_check_promo->execute([$new_promotion_code]);
+        if (!$stmt_check_promo->fetch()) {
+            $_SESSION['error'] = "Erreur: Nouvelle promotion inexistante.";
+            header("Location: " . $_SERVER['HTTP_REFERER']);
+            exit;
+        }
+        
+        $pdo->beginTransaction();
+        
+        $deplacements_reussis = 0;
+        $deplacements_echoues = 0;
+        $details_erreurs = [];
+        
+        foreach ($etudiants as $matricule) {
+            $matricule = trim($matricule);
+            if (empty($matricule)) continue;
+            
+            try {
+                // Vérifier que l'étudiant existe et que l'inscription existe
+                $stmt_check_existing = $pdo->prepare("
+                    SELECT id_inscription, id_mention, code_promotion
+                    FROM t_inscription
+                    WHERE matricule = ? AND id_annee = ?
+                    LIMIT 1
+                ");
+                $stmt_check_existing->execute([$matricule, $annee_academique]);
+                $existing = $stmt_check_existing->fetch(PDO::FETCH_ASSOC);
+                
+                if (!$existing) {
+                    $details_erreurs[] = "Matricule $matricule : pas d'inscription trouvée pour cette année";
+                    $deplacements_echoues++;
+                    continue;
+                }
+                
+                // Vérifier qu'il n'est pas déjà inscrit à la destination
+                $stmt_check_dest = $pdo->prepare("
+                    SELECT id_inscription 
+                    FROM t_inscription
+                    WHERE matricule = ? 
+                      AND id_mention = ? 
+                      AND code_promotion = ? 
+                      AND id_annee = ?
+                ");
+                $stmt_check_dest->execute([
+                    $matricule,
+                    $new_mention_id,
+                    $new_promotion_code,
+                    $annee_academique
+                ]);
+                
+                if ($stmt_check_dest->fetch()) {
+                    $details_erreurs[] = "Matricule $matricule : déjà inscrit à la mention/promotion de destination";
+                    $deplacements_echoues++;
+                    continue;
+                }
+                
+                // Effectuer le déplacement (mise à jour mention/promotion)
+                $stmt_update = $pdo->prepare("
+                    UPDATE t_inscription
+                    SET id_mention = ?, code_promotion = ?
+                    WHERE id_inscription = ? AND id_annee = ?
+                ");
+                
+                $stmt_update->execute([
+                    $new_mention_id,
+                    $new_promotion_code,
+                    $existing['id_inscription'],
+                    $annee_academique
+                ]);
+                
+                $deplacements_reussis++;
+                
+            } catch (PDOException $e) {
+                $details_erreurs[] = "Matricule $matricule : " . $e->getMessage();
+                $deplacements_echoues++;
+            }
+        }
+        
+        $pdo->commit();
+        
+        // Message de résultat
+        if ($deplacements_reussis > 0) {
+            $message = "<strong>Succès !</strong> $deplacements_reussis étudiant(s) déplacé(s) avec succès.";
+            
+            if ($deplacements_echoues > 0) {
+                $message .= "<br><strong>Attention :</strong> $deplacements_echoues déplacement(s) ont échoué.";
+                if (!empty($details_erreurs)) {
+                    $message .= "<br><small>Détails :<ul class='mb-0 mt-1'>";
+                    foreach (array_slice($details_erreurs, 0, 5) as $erreur) {
+                        $message .= "<li>" . htmlspecialchars($erreur) . "</li>";
+                    }
+                    if (count($details_erreurs) > 5) {
+                        $message .= "<li>... et " . (count($details_erreurs) - 5) . " autre(s) erreur(s)</li>";
+                    }
+                    $message .= "</ul></small>";
+                }
+            }
+            
+            $_SESSION['success'] = $message;
+        } else {
+            $message = "<strong>Erreur !</strong> Aucun étudiant n'a pu être déplacé.";
+            if (!empty($details_erreurs)) {
+                $message .= "<br><small>Détails :<ul class='mb-0 mt-1'>";
+                foreach (array_slice($details_erreurs, 0, 10) as $erreur) {
+                    $message .= "<li>" . htmlspecialchars($erreur) . "</li>";
+                }
+                $message .= "</ul></small>";
+            }
+            $_SESSION['error'] = $message;
+        }
+        
+        // Redirection vers la liste des inscriptions
+        header("Location: ?page=domaine&action=view&id=$id_domaine&mention=$mention_id&tab=inscriptions&promotion=$promotion_code&annee=$annee_academique&sub_tab=liste");
+        exit;
+        
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        
+        $_SESSION['error'] = "Erreur lors du déplacement : " . htmlspecialchars($e->getMessage());
         header("Location: " . $_SERVER['HTTP_REFERER']);
         exit;
     }

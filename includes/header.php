@@ -424,6 +424,9 @@ if (!defined('HEADER_INCLUDED')) {
                             <li><a class="dropdown-item" href="?page=jury_nomination">
                                 <i class="bi bi-people-fill me-1"></i> Nomination Jury
                             </a></li>
+                            <li><a class="dropdown-item" href="?page=publication_resultats">
+                                <i class="bi bi-broadcast-pin me-1"></i> Publication Résultats
+                            </a></li>
                             <li><a class="dropdown-item" href="?page=backup_manager">
                                 <i class="bi bi-database-gear me-1"></i> Gestion des Sauvegardes
                             </a></li>
