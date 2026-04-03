@@ -76,6 +76,17 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 $csrf_token = $_SESSION['csrf_token'];
 
+// Fonction pour déterminer la promotion inférieure dans la hiérarchie LMD
+function getPromotionInferieure($code_promotion) {
+    $hierarchie = [
+        'L2' => 'L1',
+        'L3' => 'L2',
+        'M1' => 'L3',
+        'M2' => 'M1'
+    ];
+    return $hierarchie[strtoupper($code_promotion)] ?? null;
+}
+
 // Fonction améliorée pour récupérer l'année académique active avec cache
 function getAnneeAcademique($pdo) {
     static $cached_annee = null;
@@ -517,6 +528,73 @@ if (isset($_GET['action_inscription']) || isset($_POST['action_inscription'])) {
                                     Réinscrire un étudiant
                                 </a>
                             </div>
+                            <?php
+                            // Suggestion automatique : étudiants de la promotion inférieure
+                            $promo_inferieure = getPromotionInferieure($promotion_code);
+                            if ($promo_inferieure) {
+                                try {
+                                    $sql_suggestion = "
+                                        SELECT COUNT(*) as nb_etudiants
+                                        FROM t_inscription i
+                                        INNER JOIN t_mention m ON i.id_mention = m.id_mention
+                                        INNER JOIN t_filiere f ON m.idFiliere = f.idFiliere
+                                        INNER JOIN t_anne_academique aa ON i.id_annee = aa.id_annee
+                                        WHERE f.id_domaine = :id_domaine
+                                          AND i.id_mention = :mention_id
+                                          AND i.code_promotion = :promo_inf
+                                          AND i.statut = 'Actif'
+                                          AND aa.date_fin < CURDATE()
+                                          AND i.matricule NOT IN (
+                                              SELECT i2.matricule FROM t_inscription i2
+                                              WHERE i2.code_promotion = :promo_actuelle
+                                                AND i2.id_mention = :mention_id2
+                                                AND i2.id_annee = :annee_actuelle
+                                          )
+                                    ";
+                                    $stmt_suggestion = $pdo->prepare($sql_suggestion);
+                                    $stmt_suggestion->execute([
+                                        ':id_domaine' => $id_domaine,
+                                        ':mention_id' => $mention_id,
+                                        ':promo_inf' => $promo_inferieure,
+                                        ':promo_actuelle' => $promotion_code,
+                                        ':mention_id2' => $mention_id,
+                                        ':annee_actuelle' => $annee_academique
+                                    ]);
+                                    $nb_suggestion = $stmt_suggestion->fetch(PDO::FETCH_ASSOC)['nb_etudiants'];
+                                    
+                                    if ($nb_suggestion > 0) {
+                            ?>
+                            <hr class="my-4">
+                            <div class="row justify-content-center">
+                                <div class="col-md-10">
+                                    <div class="card border-primary border-2">
+                                        <div class="card-body text-start">
+                                            <h6 class="card-title text-primary">
+                                                <i class="bi bi-lightbulb-fill text-warning me-2"></i>
+                                                Suggestion de réinscription
+                                            </h6>
+                                            <p class="mb-3">
+                                                <strong><?php echo $nb_suggestion; ?></strong> étudiant(s) de la promotion 
+                                                <strong><?php echo htmlspecialchars($promo_inferieure); ?></strong> 
+                                                (années passées) sont éligibles pour une réinscription en 
+                                                <strong><?php echo htmlspecialchars($promotion_code); ?></strong>.
+                                            </p>
+                                            <a href="?page=domaine&action=view&id=<?php echo $id_domaine; ?>&mention=<?php echo $mention_id; ?>&tab=inscriptions&promotion=<?php echo $promotion_code; ?>&annee=<?php echo $annee_academique; ?>&sub_tab=reinscrire" 
+                                               class="btn btn-primary">
+                                                <i class="bi bi-arrow-repeat me-2"></i>
+                                                Voir et réinscrire ces étudiants
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php
+                                    }
+                                } catch (PDOException $e) {
+                                    error_log("Erreur suggestion réinscription: " . $e->getMessage());
+                                }
+                            }
+                            ?>
                             <hr class="my-4">
                             <div class="row justify-content-center">
                                 <div class="col-md-8">
@@ -562,10 +640,19 @@ if (isset($_GET['action_inscription']) || isset($_POST['action_inscription'])) {
                                     <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                                     <input type="hidden" name="action_inscription" value="reinscrire">
                                     
+                                    <?php
+                                    $promo_inf_reinscrire = getPromotionInferieure($promotion_code);
+                                    ?>
                                     <div class="alert alert-info border-0 mb-4">
                                         <i class="bi bi-info-circle-fill me-2"></i>
-                                        <strong>Réinscription :</strong> Sélectionnez un ou plusieurs étudiants à réinscrire dans une nouvelle mention/promotion pour l'année académique sélectionnée.
+                                        <strong>Réinscription :</strong> Sélectionnez un ou plusieurs étudiants à réinscrire dans la promotion <strong><?php echo htmlspecialchars($promotion_code); ?></strong> pour l'année académique <strong><?php echo htmlspecialchars($annee_academique); ?></strong>.
                                     </div>
+                                    <?php if ($promo_inf_reinscrire): ?>
+                                    <div class="alert alert-warning border-0 mb-4">
+                                        <i class="bi bi-arrow-up-circle-fill me-2"></i>
+                                        <strong>Source :</strong> La liste ci-dessous affiche les étudiants de la promotion <strong><?php echo htmlspecialchars($promo_inf_reinscrire); ?></strong> inscrits lors d'années académiques passées, qui ne sont pas encore inscrits en <strong><?php echo htmlspecialchars($promotion_code); ?></strong> pour l'année <strong><?php echo htmlspecialchars($annee_academique); ?></strong>.
+                                    </div>
+                                    <?php endif; ?>
                                     
                                     <div class="row mb-4">
                                         <div class="col-md-6">
@@ -677,7 +764,12 @@ if (isset($_GET['action_inscription']) || isset($_POST['action_inscription'])) {
                                                     <tbody>
                                                         <?php
                                                         try {
-                                                            // Récupérer tous les étudiants inscrits dans le domaine
+                                                            // Déterminer la promotion inférieure pour suggérer les étudiants à réinscrire
+                                                            $promo_source = getPromotionInferieure($promotion_code);
+                                                            $promotion_recherche = $promo_source ?: $promotion_code;
+                                                            
+                                                            // Récupérer les étudiants de la promotion inférieure (années passées uniquement)
+                                                            // ou de la même promotion si pas de promotion inférieure
                                                             $query_etudiants = "
                                                                 SELECT DISTINCT
                                                                     e.matricule,
@@ -700,11 +792,17 @@ if (isset($_GET['action_inscription']) || isset($_POST['action_inscription'])) {
                                                                 WHERE f.id_domaine = ?
                                                                   AND i.statut = 'Actif'
                                                                   AND i.code_promotion = ?
+                                                                  AND aa.date_fin < CURDATE()
+                                                                  AND i.matricule NOT IN (
+                                                                      SELECT i2.matricule FROM t_inscription i2
+                                                                      WHERE i2.code_promotion = ?
+                                                                        AND i2.id_annee = ?
+                                                                  )
                                                                 ORDER BY e.nom_etu, e.postnom_etu, e.prenom_etu
                                                             ";
                                                             
                                                             $stmt_etudiants = $pdo->prepare($query_etudiants);
-                                                            $stmt_etudiants->execute([$id_domaine, $_GET['promotion']]);
+                                                            $stmt_etudiants->execute([$id_domaine, $promotion_recherche, $promotion_code, $annee_academique]);
                                                             $etudiants = $stmt_etudiants->fetchAll(PDO::FETCH_ASSOC);
                                                             
                                                             if (count($etudiants) > 0):
