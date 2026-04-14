@@ -132,10 +132,47 @@ $mysqlArgs = @(
 ) + $TABLES
 
 try {
-    # Ecriture explicite en UTF-8 sans BOM pour éviter les erreurs de parsing SQL côté serveur.
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    $dumpLines = & $mysqldump @mysqlArgs
-    [System.IO.File]::WriteAllLines($DUMP_FILE, $dumpLines, $utf8NoBom)
+    # ── Stratégie d'encodage ──────────────────────────────────────────────
+    # On NE capture PAS la sortie de mysqldump dans des variables PowerShell.
+    # Capturer via  & $mysqldump  ferait passer les octets UTF-8 par l'encodage
+    # de la console Windows (CP850/CP1252) et corromprait tous les accents.
+    # Solution : mysqldump écrit directement dans un fichier via --result-file,
+    # puis PowerShell lit ce fichier en UTF-8 pour filtrer les lignes indésirables
+    # et le réécrit proprement en UTF-8-sans-BOM avec fins de ligne LF (Unix).
+    # ─────────────────────────────────────────────────────────────────────────
+
+    $utf8NoBom  = New-Object System.Text.UTF8Encoding($false)
+    $DUMP_RAW   = $DUMP_FILE + ".raw"
+
+    # mysqldump écrit les données brutes UTF-8 sans passer par la console
+    $mysqlArgsWithFile = $mysqlArgs + "--result-file=$DUMP_RAW"
+    # $ErrorActionPreference = "Stop" transforme les messages stderr de mysqldump
+    # (dont le warning "password on command line") en exceptions fatales.
+    # On suspend temporairement ce comportement pour cet appel uniquement.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $mysqldump @mysqlArgsWithFile 2>$null
+    $dumpExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    if ($dumpExitCode -ne 0 -or -not (Test-Path $DUMP_RAW) -or (Get-Item $DUMP_RAW).Length -eq 0) {
+        throw "mysqldump a échoué (code $dumpExitCode). Vérifiez les identifiants DB."
+    }
+
+    # Lire le fichier brut en UTF-8, filtrer les lignes dangereuses,
+    # réécrire en UTF-8-sans-BOM avec LF uniquement.
+    $rawLines = [System.IO.File]::ReadAllLines($DUMP_RAW, [System.Text.Encoding]::UTF8)
+
+    $filteredLines = $rawLines | Where-Object {
+        # LOCK/UNLOCK TABLES → commit implicite MySQL → brise la transaction PHP
+        $_ -notmatch '^\s*LOCK\s+TABLES\s' -and
+        $_ -notmatch '^\s*UNLOCK\s+TABLES' -and
+        $_ -notmatch '^\s*SET\s+autocommit'
+    }
+
+    $sqlContent = ($filteredLines -join "`n") + "`n"
+    [System.IO.File]::WriteAllText($DUMP_FILE, $sqlContent, $utf8NoBom)
+    Remove-Item $DUMP_RAW -ErrorAction SilentlyContinue
+
     $dumpSize = (Get-Item $DUMP_FILE).Length
     Write-OK "Dump créé : $([Math]::Round($dumpSize / 1KB, 1)) Ko → $DUMP_FILE"
 } catch {
@@ -143,7 +180,33 @@ try {
     exit 1
 }
 
-# ── Étape 3 : Upload HTTP direct + import ─────────────────────────
+# ── Étape 3a : Déployer la dernière version de import_sync.php ────
+# Assure que le serveur utilise toujours la version locale à jour.
+Write-Step "Deploiement de import_sync.php sur le serveur FTP..."
+
+$importSyncLocal = Join-Path $PSScriptRoot "import_sync.php"
+if (Test-Path $importSyncLocal) {
+    try {
+        $ftpUri = "ftp://$FTP_HOST$FTP_PATH`import_sync.php"
+        $curlFtpOut = & curl.exe -sS --ftp-create-dirs `
+            -T $importSyncLocal `
+            --user "$FTP_USER`:$FTP_PASS" `
+            "$ftpUri" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "import_sync.php deploye ($([Math]::Round((Get-Item $importSyncLocal).Length / 1KB, 1)) Ko)."
+        } else {
+            Write-Warn "Upload FTP echoue (code $LASTEXITCODE) : $curlFtpOut"
+            Write-Warn "Continuing with existing server version."
+        }
+    } catch {
+        Write-Warn "Upload FTP de import_sync.php echoue : $_"
+        Write-Warn "Continuing with existing server version."
+    }
+} else {
+    Write-Warn "import_sync.php introuvable en local ($importSyncLocal). Skipping deploy."
+}
+
+# ── Étape 3b : Upload HTTP direct + import ────────────────────────
 Write-Step "Envoi du dump SQL via HTTPS vers $IMPORT_URL..."
 
 $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue

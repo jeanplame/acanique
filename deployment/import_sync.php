@@ -135,7 +135,7 @@ if (file_exists($dbConfigSyncPath)) {
 
 try {
     $pdo = new PDO(
-        'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8',
+        'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
         DB_USER,
         DB_PASS,
         array(
@@ -157,20 +157,39 @@ if ($sql === false) {
 $rowsAffected = 0;
 
 try {
-    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0; SET NAMES utf8;");
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0;");
+    $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;");
+
+    // Normaliser les fins de ligne : le fichier peut avoir des CRLF (Windows)
+    // car PowerShell utilise Environment.NewLine lors de l'écriture.
+    // Sans normalisation, explode(";\n") ne découpe pas correctement
+    // et PDO::exec() reçoit une seule chaîne géante → rows_affected = 0.
+    $sql = str_replace("\r\n", "\n", $sql);
+    $sql = str_replace("\r", "\n", $sql); // CR seul (rare) par sécurité
 
     // Découper par statement pour un meilleur contrôle des erreurs
     // On utilise la séquence ";\n" typique d'un mysqldump
     $statements = array_filter(
         array_map('trim', explode(";\n", $sql)),
         function ($s) {
-            return !empty($s)
-                && !startsWithText($s, '--')
-                && !startsWithText($s, '/*');
+            if (empty($s)) return false;
+            if (startsWithText($s, '--')) return false;
+            if (startsWithText($s, '/*')) return false;
+            // Filtrer les statements qui causeraient un commit implicite
+            // ou un conflit avec notre gestion de transaction.
+            $upper = strtoupper(ltrim($s));
+            if (strncmp($upper, 'LOCK TABLE',   10) === 0) return false;
+            if (strncmp($upper, 'UNLOCK TABLE', 12) === 0) return false;
+            if (strncmp($upper, 'COMMIT',        6) === 0) return false;
+            if (strncmp($upper, 'ROLLBACK',      8) === 0) return false;
+            if (preg_match('/^SET\s+autocommit/i', $s))   return false;
+            return true;
         }
     );
 
-    $pdo->beginTransaction();
+    // Pas de transaction explicite : autocommit par défaut.
+    // LOCK TABLES / UNLOCK TABLES provoqueraient un commit implicite MySQL
+    // qui invaliderait une transaction PHP open — ils sont donc filtrés ci-dessus.
     foreach ($statements as $stmt) {
         if (empty($stmt)) continue;
         $result = $pdo->exec($stmt);
@@ -178,20 +197,27 @@ try {
             $rowsAffected += max(0, $result);
         }
     }
-    $pdo->commit();
 
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
 
 } catch (PDOException $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
     logLine("ERREUR import SQL : " . $e->getMessage());
     respond(false, 'Erreur lors de l\'import : ' . $e->getMessage());
 }
 
 // ── Nettoyage du fichier SQL ──────────────────────────────────────
 @unlink($sqlFilePath);
+
+// ── Enregistrement de la date de dernière synchronisation ─────────
+// Utilisé par gestion_resultats.php pour afficher "Dernière sync".
+try {
+    $pdo->prepare(
+        "INSERT INTO t_configuration (cle, valeur) VALUES ('derniere_sync', ?)
+         ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)"
+    )->execute([date('Y-m-d H:i:s')]);
+} catch (PDOException $ignored) {
+    // Non bloquant : on ne fait pas échouer l'import pour ça.
+}
 
 logLine("SUCCÈS — {$rowsAffected} lignes traitées. Fichier SQL supprimé.");
 

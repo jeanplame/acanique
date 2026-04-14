@@ -1120,6 +1120,8 @@ if (!$publication_active && isset($_POST['matricule'])) {
                         <?php
                         $total_note   = 0;
                         $note_count   = 0;
+                        $total_coef   = 0;   // Somme des coefficients
+                        $max_note     = 0;   // Maxima = (somme coefs) × 20
 
                         foreach ($results_array as $row):
                             $cote_s1 = array_key_exists('cote_s1', $row) && $row['cote_s1'] !== null ? (float)$row['cote_s1'] : null;
@@ -1148,8 +1150,25 @@ if (!$publication_active && isset($_POST['matricule'])) {
 
                             $decision = ($note_meilleure !== null && $note_meilleure >= 10) ? 'Validé' : 'Non validé';
 
-                            if ($note_meilleure !== null) {
-                                $total_note += $note_meilleure;
+                            // CORRECTION: Calcul pondéré des notes (comme dans deliberation.php)
+                            // Déterminer le coefficient pour ce row
+                            $coef = 0;
+                            if ($is_ec) {
+                                $coef = $coef_ec ?? 0;
+                            } elseif ($row['type'] === 'ue') { // UE sans EC
+                                $coef = $row_credits;
+                            }
+                            // Les en-têtes d'UEs ne contribuent pas
+
+                            // Ajouter le coef TOUJOURS (même si pas de note)
+                            if ($coef > 0 && !$is_ue_header) {
+                                $total_coef += $coef;
+                                $max_note += $coef * 20; // Maxima pour ce row
+                            }
+
+                            // Ajouter à la somme pondérée SEULEMENT si note existe et > 0
+                            if ($note_meilleure !== null && $note_meilleure > 0 && $coef > 0 && !$is_ue_header) {
+                                $total_note += $note_meilleure * $coef;
                                 $note_count++;
                             }
 
@@ -1198,14 +1217,33 @@ if (!$publication_active && isset($_POST['matricule'])) {
 
             <!-- Summary -->
             <?php
-            $moyenne = $note_count > 0 ? $total_note / $note_count : 0;
-            if ($moyenne >= 16)      $mention_calc = 'Distinction';
-            elseif ($moyenne >= 14)  $mention_calc = 'Grande Satisfaction';
-            elseif ($moyenne >= 12)  $mention_calc = 'Satisfaction';
-            elseif ($moyenne >= 10)  $mention_calc = 'Passable';
+            // CORRECTION: Moyenne pondérée correcte (comme dans deliberation.php)
+            $moyenne = $total_coef > 0 ? $total_note / $total_coef : 0;
+            $pourcentage = $max_note > 0 ? ($total_note / $max_note) * 100 : 0;
+
+            if ($moyenne >= 18)      $mention_calc = 'Excellence (A)';
+            elseif ($moyenne >= 16)  $mention_calc = 'Très Bien (B)';
+            elseif ($moyenne >= 14)  $mention_calc = 'Bien (C)';
+            elseif ($moyenne >= 12)  $mention_calc = 'Assez Bien (D)';
+            elseif ($moyenne >= 10)  $mention_calc = 'Passable (E)';
             else                     $mention_calc = 'Non attribuée';
 
-            $admis = $note_count > 0 && $moyenne >= 10;
+            $pourcent_credits = $total_credits > 0 ? ($credits_valides / $total_credits) * 100 : 0;
+
+            // Compter le nombre d'échecs (notes < 10)
+            $nombre_echecs = 0;
+            foreach ($results_array as $r) {
+                if ($r['type'] === 'ue_header') continue;
+                $s1 = $r['cote_s1'] ?? null;
+                $s2 = $r['cote_s2'] ?? null;
+                $meilleure = ($s1 === null && $s2 === null) ? null : max($s1 ?? -INF, $s2 ?? -INF);
+                if ($meilleure !== null && $meilleure > 0 && $meilleure < 10) {
+                    $nombre_echecs++;
+                }
+            }
+
+            // ADMIS si moyenne >= 10 ET > 85% crédits validés ET au plus 2 échecs
+            $admis = $total_coef > 0 && $moyenne >= 10 && $pourcent_credits > 85 && $nombre_echecs <= 2;
             ?>
             <div class="summary-band">
                 <div class="stat-pill">
@@ -1218,7 +1256,11 @@ if (!$publication_active && isset($_POST['matricule'])) {
                 </div>
                 <div class="stat-pill">
                     <div class="label">Moyenne annuelle</div>
-                    <div class="value"><?php echo $note_count > 0 ? number_format($moyenne, 2) : '—'; ?> <span style="font-size:13px;color:var(--text-muted);">/20</span></div>
+                    <div class="value"><?php echo $total_coef > 0 ? number_format($moyenne, 2) : '—'; ?> <span style="font-size:13px;color:var(--text-muted);">/20</span></div>
+                </div>
+                <div class="stat-pill">
+                    <div class="label">Pourcentage acquisition</div>
+                    <div class="value"><?php echo $max_note > 0 ? number_format($pourcentage, 2) : '—'; ?> <span style="font-size:13px;color:var(--text-muted);">%</span></div>
                 </div>
                 <div class="stat-pill">
                     <div class="label">Mention</div>
