@@ -1511,43 +1511,8 @@ if (isset($_GET['action_inscription']) || isset($_POST['action_inscription'])) {
 
                     // Fonction d'impression
                     function printTable() {
-                        const printContent = document.getElementById('inscriptionsTable');
-                        if (!printContent) return;
-
-                        const originalContent = document.body.innerHTML;
-                        const printWindow = window.open('', '_blank');
-
-                        printWindow.document.write(`
-                            <html>
-                            <head>
-                                <title>Liste des Inscriptions - <?php echo htmlspecialchars($promotion_code); ?></title>
-                                <link href="../../../css/bootstrap.min.css" rel="stylesheet">
-                                <style>
-                                    body { font-family: Arial, sans-serif; font-size: 12px; }
-                                    table { width: 100%; border-collapse: collapse; }
-                                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                                    th { background-color: #f2f2f2; font-weight: bold; }
-                                    .no-print { display: none; }
-                                    @media print {
-                                        .btn-group, .btn { display: none !important; }
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="container-fluid">
-                                    <h2 class="text-center mb-4">Liste des Inscriptions</h2>
-                                    <p><strong>Promotion:</strong> <?php echo htmlspecialchars($promotion_code); ?></p>
-                                    <p><strong>Année Académique:</strong> <?php echo htmlspecialchars($annee_academique); ?></p>
-                                    <p><strong>Date d'impression:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
-                                    <hr>
-                                    ${printContent.outerHTML}
-                                </div>
-                            </body>
-                            </html>
-                        `);
-
-                        printWindow.document.close();
-                        printWindow.print();
+                        const printUrl = '?page=domaine&action=liste_etudiants&id=<?php echo urlencode((string) $id_domaine); ?>&mention=<?php echo urlencode((string) $mention_id); ?>&promotion=<?php echo urlencode((string) $promotion_code); ?>&annee=<?php echo urlencode((string) $annee_academique); ?>&print=1';
+                        window.open(printUrl, '_blank', 'noopener');
                     }
 
                     // Fonctions utilitaires

@@ -427,6 +427,9 @@ if (!defined('HEADER_INCLUDED')) {
                             <li><a class="dropdown-item" href="?page=publication_resultats">
                                 <i class="bi bi-broadcast-pin me-1"></i> Publication Résultats
                             </a></li>
+                            <li><a class="dropdown-item" href="?page=domaine&action=liste_etudiants&print=1" target="_blank">
+                                <i class="bi bi-printer-fill me-1"></i> Imprimer listes étudiants
+                            </a></li>
                             <li><a class="dropdown-item" href="?page=backup_manager">
                                 <i class="bi bi-database-gear me-1"></i> Gestion des Sauvegardes
                             </a></li>
