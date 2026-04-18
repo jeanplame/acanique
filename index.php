@@ -29,10 +29,10 @@ if (isset($_GET['page']) && $_GET['page'] === 'logout') {
 
     $_SESSION = array();
     if (isset($_COOKIE[session_name()])) {
-        setcookie(session_name(), '', time()-42000, '/');
+        setcookie(session_name(), '', time() - 42000, '/');
     }
     if (isset($_COOKIE['remember_token'])) {
-        setcookie('remember_token', '', time()-42000, '/');
+        setcookie('remember_token', '', time() - 42000, '/');
     }
     session_destroy();
     header("Location: ?page=login");
@@ -75,15 +75,15 @@ if ($page === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['nom_complet'] = $user['nom_complet'];
                     $_SESSION['role'] = $user['role'];
                     $_SESSION['login_time'] = time(); // Pour le nettoyage automatique du cache
-                    
+
                     // Gestion du "Se souvenir de moi"
                     if ($remember) {
                         $token = bin2hex(random_bytes(32));
                         $expiry = date('Y-m-d H:i:s', strtotime('+30 days'));
-                        
+
                         $stmt = $pdo->prepare("UPDATE t_utilisateur SET remember_token = ?, token_expires = ? WHERE username = ?");
                         $stmt->execute([$token, $expiry, $user['username']]);
-                        
+
                         // Cookie sécurisé
                         setcookie('remember_token', $token, [
                             'expires' => time() + (30 * 24 * 60 * 60),
@@ -93,11 +93,14 @@ if ($page === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             'httponly' => true,
                             'samesite' => 'Lax'
                         ]);
-                        
+
                         logLoginAttempt($pdo, $user['username'], true, "Connexion réussie avec Remember Me");
                     } else {
                         logLoginAttempt($pdo, $user['username'], true, "Connexion réussie");
                     }
+
+                    // Marquer la connexion fraîche pour le preloader
+                    $_SESSION['just_logged_in'] = true;
 
                     // Vider le tampon avant la redirection
                     ob_end_clean();
@@ -193,7 +196,7 @@ switch ($page) {
     case 'publication_resultats':
         $page_path = 'pages/admin/publication_resultats.php';
         break;
-    
+
     case 'login':
         $page_path = 'pages/login.php';
         break;
@@ -258,6 +261,7 @@ $content = ob_get_clean();
 ?>
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -277,11 +281,33 @@ $content = ob_get_clean();
     <link href="css/dashboard.css" rel="stylesheet">
     <link href="css/domaine.css" rel="stylesheet">
     <link href="css/ai_chat.css" rel="stylesheet">
+    <link href="css/preloader.css" rel="stylesheet">
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
 </head>
+
 <body>
+    <?php
+    // Preloader post-login
+    $showPreloader = !empty($_SESSION['just_logged_in']) && $page === 'dashboard';
+    if ($showPreloader) {
+        unset($_SESSION['just_logged_in']);
+        $preloaderUser = htmlspecialchars($_SESSION['nom_complet'] ?? 'Utilisateur', ENT_QUOTES, 'UTF-8');
+    ?>
+        <div id="preloader-overlay" class="preloader-overlay" data-force="1">
+            <img src="img/logo.gif" alt="ACANIQUE" class="preloader-logo">
+            <div class="preloader-title">ACANIQUE &mdash; UNILO</div>
+            <div class="preloader-subtitle">Universit&eacute; Notre Dame de Lomami</div>
+            <div class="preloader-progress-track">
+                <div class="preloader-progress-bar"></div>
+            </div>
+            <div class="preloader-status">Initialisation&hellip;</div>
+            <div class="preloader-percent">0%</div>
+            <div class="preloader-dots"><span></span><span></span><span></span></div>
+            <div class="preloader-welcome">Bienvenue, <?= $preloaderUser ?> &#128075;</div>
+        </div>
+    <?php } ?>
     <?php echo $content; ?>
-    
+
     <script src="vendor/jquery/jquery-3.2.1.min.js"></script>
     <script src="vendor/animsition/js/animsition.min.js"></script>
     <script src="vendor/bootstrap/js/popper.js"></script>
@@ -291,8 +317,12 @@ $content = ob_get_clean();
     <script src="vendor/daterangepicker/daterangepicker.js"></script>
     <script src="vendor/countdowntime/countdowntime.js"></script>
     <script src="js/main.js"></script>
-<?php if (!empty($_SESSION['user_id'])): ?>
-    <script src="js/ai_chat.js"></script>
-<?php endif; ?>
+    <?php if ($showPreloader ?? false): ?>
+        <script src="js/preloader.js"></script>
+    <?php endif; ?>
+    <?php if (!empty($_SESSION['user_id'])): ?>
+        <script src="js/ai_chat.js"></script>
+    <?php endif; ?>
 </body>
+
 </html>

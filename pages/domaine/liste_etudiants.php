@@ -12,8 +12,11 @@ if (!function_exists('printStudentListEsc')) {
 
 $promotionParam = trim((string) ($_GET['promotion'] ?? ($_GET['code_promotion'] ?? '')));
 $mentionId = isset($_GET['mention']) ? (int) $_GET['mention'] : 0;
+$filiereId = isset($_GET['filiere']) ? (int) $_GET['filiere'] : 0;
 $anneeId = isset($_GET['annee']) ? (int) $_GET['annee'] : 0;
 $idDomaine = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+$searchKeyword = trim((string) ($_GET['q'] ?? ''));
+$sexeFilter = strtoupper(trim((string) ($_GET['sexe'] ?? '')));
 $printMode = isset($_GET['print']) && $_GET['print'] === '1';
 $globalMode = ($promotionParam === '');
 
@@ -54,6 +57,48 @@ if ($anneeId > 0) {
 
 $sections = [];
 $errorMessage = null;
+$domainesOptions = [];
+$filiereOptions = [];
+$mentionOptions = [];
+$promotionOptions = [];
+
+try {
+    $stmtDomaines = $pdo->query("SELECT id_domaine, nom_domaine FROM t_domaine ORDER BY nom_domaine ASC");
+    $domainesOptions = $stmtDomaines->fetchAll(PDO::FETCH_ASSOC);
+
+    if ($idDomaine > 0) {
+        $stmtFilieres = $pdo->prepare("SELECT idFiliere, nomFiliere FROM t_filiere WHERE id_domaine = :id_domaine ORDER BY nomFiliere ASC");
+        $stmtFilieres->execute([':id_domaine' => $idDomaine]);
+    } else {
+        $stmtFilieres = $pdo->query("SELECT idFiliere, nomFiliere FROM t_filiere ORDER BY nomFiliere ASC");
+    }
+    $filiereOptions = $stmtFilieres->fetchAll(PDO::FETCH_ASSOC);
+
+    if ($filiereId > 0) {
+        $stmtMentions = $pdo->prepare("SELECT id_mention, libelle FROM t_mention WHERE idFiliere = :id_filiere ORDER BY libelle ASC");
+        $stmtMentions->execute([':id_filiere' => $filiereId]);
+    } elseif ($idDomaine > 0) {
+        $stmtMentions = $pdo->prepare(
+            "SELECT m.id_mention, m.libelle
+             FROM t_mention m
+             INNER JOIN t_filiere f ON m.idFiliere = f.idFiliere
+             WHERE f.id_domaine = :id_domaine
+             ORDER BY m.libelle ASC"
+        );
+        $stmtMentions->execute([':id_domaine' => $idDomaine]);
+    } else {
+        $stmtMentions = $pdo->query("SELECT id_mention, libelle FROM t_mention ORDER BY libelle ASC");
+    }
+    $mentionOptions = $stmtMentions->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmtPromotions = $pdo->query("SELECT code_promotion, nom_promotion FROM t_promotion ORDER BY nom_promotion ASC, code_promotion ASC");
+    $promotionOptions = $stmtPromotions->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    $domainesOptions = [];
+    $filiereOptions = [];
+    $mentionOptions = [];
+    $promotionOptions = [];
+}
 
 try {
     if ($globalMode) {
@@ -63,6 +108,31 @@ try {
         if ($anneeId > 0) {
             $conditions[] = 'i.id_annee = :annee_id';
             $params[':annee_id'] = $anneeId;
+        }
+
+        if ($idDomaine > 0) {
+            $conditions[] = 'd.id_domaine = :id_domaine';
+            $params[':id_domaine'] = $idDomaine;
+        }
+
+        if ($filiereId > 0) {
+            $conditions[] = 'f.idFiliere = :id_filiere';
+            $params[':id_filiere'] = $filiereId;
+        }
+
+        if ($mentionId > 0) {
+            $conditions[] = 'i.id_mention = :mention_id';
+            $params[':mention_id'] = $mentionId;
+        }
+
+        if ($sexeFilter === 'M' || $sexeFilter === 'F') {
+            $conditions[] = 'e.sexe = :sexe';
+            $params[':sexe'] = $sexeFilter;
+        }
+
+        if ($searchKeyword !== '') {
+            $conditions[] = '(e.matricule LIKE :keyword OR e.nom_etu LIKE :keyword OR e.postnom_etu LIKE :keyword OR e.prenom_etu LIKE :keyword)';
+            $params[':keyword'] = '%' . $searchKeyword . '%';
         }
 
         $whereClause = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
@@ -136,9 +206,24 @@ try {
             $params[':mention_id'] = $mentionId;
         }
 
+        if ($filiereId > 0) {
+            $conditions[] = 'f.idFiliere = :id_filiere';
+            $params[':id_filiere'] = $filiereId;
+        }
+
         if ($idDomaine > 0) {
             $conditions[] = 'd.id_domaine = :id_domaine';
             $params[':id_domaine'] = $idDomaine;
+        }
+
+        if ($sexeFilter === 'M' || $sexeFilter === 'F') {
+            $conditions[] = 'e.sexe = :sexe';
+            $params[':sexe'] = $sexeFilter;
+        }
+
+        if ($searchKeyword !== '') {
+            $conditions[] = '(e.matricule LIKE :keyword OR e.nom_etu LIKE :keyword OR e.postnom_etu LIKE :keyword OR e.prenom_etu LIKE :keyword)';
+            $params[':keyword'] = '%' . $searchKeyword . '%';
         }
 
         $sql = "SELECT
@@ -200,9 +285,184 @@ $printUrl = '?' . http_build_query($printQuery);
 ?>
 
 <style>
+    @font-face {
+        font-family: 'Alisandra Demo';
+        src: local('Alisandra Demo'), local('AlisandraDemo');
+        font-weight: normal;
+        font-style: normal;
+        color: black;
+    }
+
     .student-print-wrapper {
         max-width: 1100px;
         margin: 1.5rem auto;
+        font-family: 'Tw Cen MT', Arial, sans-serif;
+    }
+
+    .filter-panel {
+        background: #ffffff;
+        border: 1px solid #dfe3ea;
+        border-radius: 10px;
+        padding: 18px 18px 14px;
+        margin-bottom: 1rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+        transition: box-shadow 0.3s;
+    }
+
+    .filter-panel:focus-within {
+        box-shadow: 0 4px 20px rgba(13, 110, 253, 0.12);
+    }
+
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+        align-items: end;
+    }
+
+    .filter-panel label {
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        color: #555;
+    }
+
+    .filter-panel label .filter-icon {
+        font-size: 13px;
+        color: #0d6efd;
+    }
+
+    .filter-panel .form-control,
+    .filter-panel .form-select {
+        min-height: 40px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .filter-panel .form-select.is-loading {
+        background-image: none;
+        color: #999;
+        pointer-events: none;
+    }
+
+    .filter-panel .form-select.is-loading::after {
+        content: '';
+    }
+
+    .select-wrapper {
+        position: relative;
+    }
+
+    .select-wrapper .spinner-border {
+        position: absolute;
+        right: 30px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 16px;
+        height: 16px;
+        border-width: 2px;
+        display: none;
+        color: #0d6efd;
+    }
+
+    .select-wrapper.loading .spinner-border {
+        display: inline-block;
+    }
+
+    .select-wrapper.loading .form-select {
+        color: #999;
+        pointer-events: none;
+    }
+
+    .filter-badge-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .filter-badge-row .filter-title {
+        font-weight: 700;
+        font-size: 15px;
+        color: #333;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    #results-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(135deg, #0d6efd, #0b5ed7);
+        color: #fff;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+        transition: transform 0.2s, opacity 0.2s;
+        min-width: 160px;
+        justify-content: center;
+    }
+
+    #results-badge.pulse {
+        animation: badgePulse 0.6s ease;
+    }
+
+    @keyframes badgePulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.06); }
+    }
+
+    .active-filters-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .active-filter-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #e7f1ff;
+        color: #0d6efd;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .active-filter-tag:hover {
+        background: #cfe2ff;
+    }
+
+    .active-filter-tag .remove-tag {
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+        opacity: 0.6;
+    }
+
+    .active-filter-tag .remove-tag:hover {
+        opacity: 1;
+    }
+
+    #results-container {
+        transition: opacity 0.3s ease;
+    }
+
+    #results-container.is-loading {
+        opacity: 0.35;
+        pointer-events: none;
     }
 
     .print-actions {
@@ -240,17 +500,17 @@ $printUrl = '?' . http_build_query($printQuery);
 
     .print-header {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
-        gap: 14px;
+        gap: 10px;
         border-bottom: 2px solid #111;
-        padding-bottom: 10px;
-        margin-bottom: 14px;
+        padding-bottom: 6px;
+        margin-bottom: 8px;
     }
 
     .print-header .logo {
-        width: 62px;
-        height: 62px;
+        width: 58px;
+        height: 58px;
         object-fit: contain;
         flex-shrink: 0;
     }
@@ -258,40 +518,48 @@ $printUrl = '?' . http_build_query($printQuery);
     .print-header .title-block {
         flex: 1;
         text-align: center;
+        line-height: 1;
+    }
+
+    .print-header .title-block p {
+        margin: 0;
+        line-height: 1;
+        color: black;
     }
 
     .print-header .title-block .school-name {
-        font-family: 'Brush Script MT', 'Segoe Script', cursive;
+        font-family: 'Alisandra Demo', 'Brush Script MT', 'Segoe Script', cursive;
         font-size: 2rem;
-        line-height: 1.1;
-        font-weight: 700;
+        line-height: 0.95;
+        font-weight: 400;
         margin: 0;
     }
 
     .print-header .title-block .office-name {
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         font-weight: 800;
-        margin: 2px 0;
+        margin: 0;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.2px;
     }
 
     .print-header .title-block .service-name {
-        font-size: 1.05rem;
+        font-size: 1rem;
         font-weight: 700;
         margin: 0;
     }
 
     .meta-lines {
-        margin: 16px 0 18px;
+        margin: 10px 0 12px;
     }
 
     .meta-row {
         display: flex;
         align-items: flex-end;
-        gap: 8px;
-        margin-bottom: 6px;
+        gap: 6px;
+        margin-bottom: 2px;
         font-size: 15px;
+        line-height: 1;
     }
 
     .meta-label {
@@ -316,6 +584,7 @@ $printUrl = '?' . http_build_query($printQuery);
         border-collapse: collapse;
         margin-top: 6px;
         font-size: 14px;
+        background-color: white !important;
     }
 
     .student-list-table th,
@@ -332,48 +601,54 @@ $printUrl = '?' . http_build_query($printQuery);
     }
 
     .student-list-table td {
-        background: #f2f2f2;
+        background: #ffffff;
         height: 34px;
     }
 
     .student-list-table td:nth-child(2),
     .student-list-table td:nth-child(3),
     .student-list-table td:nth-child(4) {
-        background: #ebebeb;
+        background: #ffffff;
     }
 
     .table-summary {
-        margin-top: 10px;
+        margin-top: 8px;
         font-size: 13px;
         color: #222;
+        line-height: 1;
     }
 
     .signature-date {
         text-align: center;
-        margin-top: 24px;
+        margin-top: 16px;
         font-size: 15px;
+        line-height: 1;
     }
 
     .signature-block {
         text-align: center;
-        margin-top: 18px;
+        margin-top: 12px;
+        line-height: 1;
     }
 
     .signature-block .service {
         font-weight: 700;
         font-size: 15px;
-        margin-bottom: 28px;
+        margin-bottom: 14px;
+        line-height: 1;
     }
 
     .signature-block .name {
         font-weight: 800;
         font-size: 16px;
         text-decoration: underline;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
+        line-height: 1;
     }
 
     .signature-block .role {
         font-size: 14px;
+        line-height: 1;
     }
 
     @media print {
@@ -382,21 +657,43 @@ $printUrl = '?' . http_build_query($printQuery);
             margin: 10mm;
         }
 
+        html,
         body {
             background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        body * {
+            visibility: hidden;
+        }
+
+        .student-print-wrapper,
+        .student-print-wrapper * {
+            visibility: visible;
+        }
+
+        .student-print-wrapper {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            max-width: none;
+            margin: 0;
         }
 
         .no-print,
         .navbar,
         .sidebar,
         header,
-        footer {
+        footer,
+        #ai-chat-fab,
+        #ai-chat-window,
+        [id^='ai-chat'],
+        [class*='ai-chat'],
+        [class*='jadbot'] {
             display: none !important;
-        }
-
-        .student-print-wrapper {
-            max-width: none;
-            margin: 0;
+            visibility: hidden !important;
         }
 
         .print-sheet {
@@ -408,6 +705,110 @@ $printUrl = '?' . http_build_query($printQuery);
 </style>
 
 <div class="student-print-wrapper">
+    <form method="get" id="filter-form" class="filter-panel no-print"
+          data-ajax-url="<?= printStudentListEsc($baseUrl) ?>/ajax/liste_etudiants_filters.php">
+        <input type="hidden" name="page" value="domaine">
+        <input type="hidden" name="action" value="liste_etudiants">
+        <?php if ($anneeId > 0): ?>
+            <input type="hidden" name="annee" value="<?= (int) $anneeId ?>">
+        <?php endif; ?>
+
+        <div class="filter-badge-row">
+            <span class="filter-title">
+                <i class="bi bi-funnel-fill" style="color:#0d6efd"></i> Filtres intelligents
+            </span>
+            <span id="results-badge">
+                <i class="bi bi-people-fill"></i>
+                <span id="badge-text">Chargement...</span>
+            </span>
+        </div>
+
+        <div class="filter-grid">
+            <div>
+                <label for="q"><i class="bi bi-search filter-icon"></i> Recherche</label>
+                <input type="text" id="q" name="q" class="form-control"
+                       placeholder="Nom, postnom ou matricule..."
+                       value="<?= printStudentListEsc($searchKeyword) ?>"
+                       autocomplete="off">
+            </div>
+            <div>
+                <label for="filter-domaine"><i class="bi bi-diagram-3 filter-icon"></i> Domaine</label>
+                <div class="select-wrapper" id="wrap-domaine">
+                    <select id="filter-domaine" name="id" class="form-select">
+                        <option value="">Tous les domaines</option>
+                        <?php foreach ($domainesOptions as $domaineOption): ?>
+                            <option value="<?= (int) $domaineOption['id_domaine'] ?>" <?= $idDomaine === (int) $domaineOption['id_domaine'] ? 'selected' : '' ?>>
+                                <?= printStudentListEsc($domaineOption['nom_domaine']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="spinner-border" role="status"></div>
+                </div>
+            </div>
+            <div>
+                <label for="filter-filiere"><i class="bi bi-collection filter-icon"></i> Filière</label>
+                <div class="select-wrapper" id="wrap-filiere">
+                    <select id="filter-filiere" name="filiere" class="form-select">
+                        <option value="">Toutes les filières</option>
+                        <?php foreach ($filiereOptions as $filiereOption): ?>
+                            <option value="<?= (int) $filiereOption['idFiliere'] ?>" <?= $filiereId === (int) $filiereOption['idFiliere'] ? 'selected' : '' ?>>
+                                <?= printStudentListEsc($filiereOption['nomFiliere']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="spinner-border" role="status"></div>
+                </div>
+            </div>
+            <div>
+                <label for="filter-mention"><i class="bi bi-bookmark filter-icon"></i> Mention</label>
+                <div class="select-wrapper" id="wrap-mention">
+                    <select id="filter-mention" name="mention" class="form-select">
+                        <option value="">Toutes les mentions</option>
+                        <?php foreach ($mentionOptions as $mentionOption): ?>
+                            <option value="<?= (int) $mentionOption['id_mention'] ?>" <?= $mentionId === (int) $mentionOption['id_mention'] ? 'selected' : '' ?>>
+                                <?= printStudentListEsc($mentionOption['libelle']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="spinner-border" role="status"></div>
+                </div>
+            </div>
+            <div>
+                <label for="filter-promotion"><i class="bi bi-mortarboard filter-icon"></i> Promotion</label>
+                <div class="select-wrapper" id="wrap-promotion">
+                    <select id="filter-promotion" name="promotion" class="form-select">
+                        <option value="">Toutes les promotions</option>
+                        <?php foreach ($promotionOptions as $promotionOption): ?>
+                            <?php $promotionValue = (string) ($promotionOption['code_promotion'] ?? ''); ?>
+                            <option value="<?= printStudentListEsc($promotionValue) ?>" <?= $promotionParam === $promotionValue ? 'selected' : '' ?>>
+                                <?= printStudentListEsc(($promotionOption['nom_promotion'] ?? $promotionValue) . ' (' . $promotionValue . ')') ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="spinner-border" role="status"></div>
+                </div>
+            </div>
+            <div>
+                <label for="filter-sexe"><i class="bi bi-gender-ambiguous filter-icon"></i> Sexe</label>
+                <select id="filter-sexe" name="sexe" class="form-select">
+                    <option value="">Tous</option>
+                    <option value="M" <?= $sexeFilter === 'M' ? 'selected' : '' ?>>Masculin</option>
+                    <option value="F" <?= $sexeFilter === 'F' ? 'selected' : '' ?>>Féminin</option>
+                </select>
+            </div>
+            <div class="d-flex gap-2 flex-wrap align-items-end">
+                <button type="submit" class="btn btn-primary" id="btn-filter">
+                    <i class="bi bi-funnel"></i> Appliquer
+                </button>
+                <a href="?page=domaine&action=liste_etudiants<?= $anneeId > 0 ? '&annee=' . (int) $anneeId : '' ?>" class="btn btn-outline-secondary" id="btn-reset">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </div>
+
+        <div class="active-filters-row" id="active-filters"></div>
+    </form>
+
     <div class="print-actions no-print">
         <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
             <i class="bi bi-arrow-left"></i> Retour
@@ -434,6 +835,7 @@ $printUrl = '?' . http_build_query($printQuery);
         <div class="alert alert-warning no-print"><?= printStudentListEsc($errorMessage) ?></div>
     <?php endif; ?>
 
+    <div id="results-container">
     <?php $sectionIndex = 0; ?>
     <?php foreach ($sections as $section): ?>
         <?php $sectionIndex++; ?>
@@ -445,7 +847,7 @@ $printUrl = '?' . http_build_query($printQuery);
                     <div class="title-block">
                         <p class="school-name">Université Notre Dame de Lomami</p>
                         <p class="office-name">Secrétariat General Académique</p>
-                        <p class="service-name">Cellule Informatique et du Numérique</p>
+                        <p class="service-name">Cellule Informatique et Numérique</p>
                     </div>
                     <img src="<?= printStudentListEsc($logoPath) ?>" alt="Logo UNILO" class="logo">
                 </div>
@@ -512,14 +914,249 @@ $printUrl = '?' . http_build_query($printQuery);
                 </div>
 
                 <div class="signature-block">
-                    <div class="service">Pour la Cellule Informatique et du Numérique</div>
+                    <div class="service">CELLULE INFORMATIQUE ET NUMERIQUE</div>
+                    <br>
                     <div class="name">Ir. Jean Marie IBANGA MBAYO</div>
                     <div class="role">Ass. &amp; Développeur full-stack</div>
                 </div>
             </div>
         </div>
     <?php endforeach; ?>
+    </div><!-- /#results-container -->
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form         = document.getElementById('filter-form');
+    const domaineSel   = document.getElementById('filter-domaine');
+    const filiereSel   = document.getElementById('filter-filiere');
+    const mentionSel   = document.getElementById('filter-mention');
+    const promotionSel = document.getElementById('filter-promotion');
+    const sexeSel      = document.getElementById('filter-sexe');
+    const searchInput  = document.getElementById('q');
+    const badgeText    = document.getElementById('badge-text');
+    const badge        = document.getElementById('results-badge');
+    const activeRow    = document.getElementById('active-filters');
+    const resultsBox   = document.getElementById('results-container');
+    const ajaxBase     = form.dataset.ajaxUrl;
+    const anneeVal     = form.querySelector('input[name="annee"]')?.value || '';
+
+    let submitTimer = null;
+    let countTimer  = null;
+    let countAbort  = null;
+
+    /* ── helpers ───────────────────────────────────────── */
+    async function fetchJson(url, signal) {
+        const r = await fetch(url, { signal: signal || undefined });
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+    }
+
+    function ajaxUrl(action, extra) {
+        let url = ajaxBase + '?action=' + encodeURIComponent(action);
+        if (anneeVal) url += '&annee=' + encodeURIComponent(anneeVal);
+        if (extra) {
+            Object.entries(extra).forEach(function(pair) {
+                if (pair[1]) url += '&' + encodeURIComponent(pair[0]) + '=' + encodeURIComponent(pair[1]);
+            });
+        }
+        return url;
+    }
+
+    function setWrapLoading(id, on) {
+        var w = document.getElementById(id);
+        if (w) w.classList.toggle('loading', !!on);
+    }
+
+    function populateSelect(sel, data, placeholder, keepValue) {
+        var cur = keepValue || '';
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+        data.forEach(function(item) {
+            var o = document.createElement('option');
+            o.value = item.id;
+            o.textContent = item.label + (sel === promotionSel ? ' (' + item.id + ')' : '');
+            if (String(item.id) === String(cur)) o.selected = true;
+            sel.appendChild(o);
+        });
+    }
+
+    /* ── cascade loaders ───────────────────────────────── */
+    async function loadFilieres(domaineId, keep) {
+        setWrapLoading('wrap-filiere', true);
+        try {
+            var data = await fetchJson(ajaxUrl('filieres', { domaine: domaineId }));
+            populateSelect(filiereSel, data, 'Toutes les filières', keep);
+        } catch(e) {}
+        setWrapLoading('wrap-filiere', false);
+    }
+
+    async function loadMentions(filiereId, domaineId, keep) {
+        setWrapLoading('wrap-mention', true);
+        try {
+            var data = await fetchJson(ajaxUrl('mentions', { filiere: filiereId, domaine: domaineId }));
+            populateSelect(mentionSel, data, 'Toutes les mentions', keep);
+        } catch(e) {}
+        setWrapLoading('wrap-mention', false);
+    }
+
+    async function loadPromotions(mentionId, filiereId, domaineId, keep) {
+        setWrapLoading('wrap-promotion', true);
+        try {
+            var data = await fetchJson(ajaxUrl('promotions', { mention: mentionId, filiere: filiereId, domaine: domaineId }));
+            populateSelect(promotionSel, data, 'Toutes les promotions', keep);
+        } catch(e) {}
+        setWrapLoading('wrap-promotion', false);
+    }
+
+    /* ── live count badge ──────────────────────────────── */
+    function scheduleCount() {
+        clearTimeout(countTimer);
+        if (countAbort) countAbort.abort();
+        countTimer = setTimeout(updateCount, 250);
+    }
+
+    async function updateCount() {
+        var ctrl = new AbortController();
+        countAbort = ctrl;
+        try {
+            var data = await fetchJson(ajaxUrl('count', {
+                domaine:   domaineSel.value,
+                filiere:   filiereSel.value,
+                mention:   mentionSel.value,
+                promotion: promotionSel.value,
+                sexe:      sexeSel.value,
+                q:         searchInput.value.trim()
+            }), ctrl.signal);
+            badgeText.textContent = data.total + ' étudiant(s) · ' + data.sections + ' section(s) · ' + data.hommes + 'H / ' + data.femmes + 'F';
+            badge.classList.add('pulse');
+            setTimeout(function() { badge.classList.remove('pulse'); }, 600);
+        } catch(e) {
+            if (e.name !== 'AbortError') badgeText.textContent = '—';
+        }
+    }
+
+    /* ── active filter tags ────────────────────────────── */
+    function refreshTags() {
+        activeRow.innerHTML = '';
+        var filters = [
+            { sel: domaineSel,   param: 'id',        label: 'Domaine' },
+            { sel: filiereSel,   param: 'filiere',   label: 'Filière' },
+            { sel: mentionSel,   param: 'mention',   label: 'Mention' },
+            { sel: promotionSel, param: 'promotion', label: 'Promotion' },
+            { sel: sexeSel,      param: 'sexe',      label: 'Sexe' }
+        ];
+        filters.forEach(function(f) {
+            if (f.sel.value) {
+                var text = f.sel.options[f.sel.selectedIndex]?.textContent?.trim() || f.sel.value;
+                var tag = document.createElement('span');
+                tag.className = 'active-filter-tag';
+                tag.innerHTML = '<strong>' + f.label + ':</strong> ' + escHtml(text) + ' <span class="remove-tag">&times;</span>';
+                tag.querySelector('.remove-tag').addEventListener('click', function() {
+                    f.sel.value = '';
+                    f.sel.dispatchEvent(new Event('change'));
+                });
+                activeRow.appendChild(tag);
+            }
+        });
+        if (searchInput.value.trim()) {
+            var tag = document.createElement('span');
+            tag.className = 'active-filter-tag';
+            tag.innerHTML = '<strong>Recherche:</strong> ' + escHtml(searchInput.value.trim()) + ' <span class="remove-tag">&times;</span>';
+            tag.querySelector('.remove-tag').addEventListener('click', function() {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input'));
+            });
+            activeRow.appendChild(tag);
+        }
+    }
+
+    function escHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    /* ── auto-submit with results loading ──────────────── */
+    function scheduleSubmit(delay) {
+        clearTimeout(submitTimer);
+        submitTimer = setTimeout(function() {
+            if (resultsBox) resultsBox.classList.add('is-loading');
+            form.submit();
+        }, delay || 700);
+    }
+
+    /* ── event: domaine changes ────────────────────────── */
+    domaineSel.addEventListener('change', async function() {
+        filiereSel.value   = '';
+        mentionSel.value   = '';
+        promotionSel.value = '';
+        await Promise.all([
+            loadFilieres(this.value),
+            loadMentions('', this.value),
+            loadPromotions('', '', this.value)
+        ]);
+        scheduleCount();
+        refreshTags();
+        scheduleSubmit();
+    });
+
+    /* ── event: filière changes ────────────────────────── */
+    filiereSel.addEventListener('change', async function() {
+        mentionSel.value   = '';
+        promotionSel.value = '';
+        await Promise.all([
+            loadMentions(this.value, domaineSel.value),
+            loadPromotions('', this.value, domaineSel.value)
+        ]);
+        scheduleCount();
+        refreshTags();
+        scheduleSubmit();
+    });
+
+    /* ── event: mention changes ────────────────────────── */
+    mentionSel.addEventListener('change', async function() {
+        promotionSel.value = '';
+        await loadPromotions(this.value, filiereSel.value, domaineSel.value);
+        scheduleCount();
+        refreshTags();
+        scheduleSubmit();
+    });
+
+    /* ── event: promotion / sexe changes ───────────────── */
+    promotionSel.addEventListener('change', function() {
+        scheduleCount();
+        refreshTags();
+        scheduleSubmit();
+    });
+
+    sexeSel.addEventListener('change', function() {
+        scheduleCount();
+        refreshTags();
+        scheduleSubmit();
+    });
+
+    /* ── event: live search (debounced) ────────────────── */
+    searchInput.addEventListener('input', function() {
+        scheduleCount();
+        refreshTags();
+        clearTimeout(submitTimer);
+        submitTimer = setTimeout(function() {
+            if (resultsBox) resultsBox.classList.add('is-loading');
+            form.submit();
+        }, 1000);
+    });
+
+    /* ── prevent double-submit on Enter ────────────────── */
+    form.addEventListener('submit', function() {
+        clearTimeout(submitTimer);
+        if (resultsBox) resultsBox.classList.add('is-loading');
+    });
+
+    /* ── initial state ────────────────────────────────── */
+    updateCount();
+    refreshTags();
+});
+</script>
 
 <?php if ($printMode): ?>
     <script>

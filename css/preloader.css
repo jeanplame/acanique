@@ -1,0 +1,171 @@
+/* ============================================================
+   ACANIQUE – Preloader / Loading Screen
+   Écran de chargement post-login
+   ============================================================ */
+
+/* ── overlay plein écran ──────────────────────────────── */
+.preloader-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0a1628 0%, #132244 40%, #1a3066 100%);
+    color: #fff;
+    opacity: 1;
+    transition: opacity .6s cubic-bezier(.4, 0, .2, 1),
+                visibility .6s;
+}
+
+.preloader-overlay.fade-out {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* ── logo pulse ───────────────────────────────────────── */
+.preloader-logo {
+    width: 88px;
+    height: 88px;
+    border-radius: 20px;
+    object-fit: contain;
+    margin-bottom: 28px;
+    animation: logoFloat 2.4s ease-in-out infinite;
+    filter: drop-shadow(0 8px 24px rgba(59, 130, 246, .35));
+}
+
+@keyframes logoFloat {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50%      { transform: translateY(-8px) scale(1.03); }
+}
+
+/* ── titre ────────────────────────────────────────────── */
+.preloader-title {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+    text-align: center;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa, #60a5fa);
+    background-size: 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+    0%   { background-position: 200% center; }
+    100% { background-position: -200% center; }
+}
+
+.preloader-subtitle {
+    font-size: .85rem;
+    color: rgba(255, 255, 255, .5);
+    margin-bottom: 36px;
+    letter-spacing: .3px;
+}
+
+/* ── barre de progression ─────────────────────────────── */
+.preloader-progress-track {
+    width: 280px;
+    height: 4px;
+    background: rgba(255, 255, 255, .08);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 18px;
+    position: relative;
+}
+
+.preloader-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    transition: width .4s cubic-bezier(.4, 0, .2, 1);
+    position: relative;
+}
+
+.preloader-progress-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent);
+    animation: barGlare 1.5s ease-in-out infinite;
+}
+
+@keyframes barGlare {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* ── texte d'état ─────────────────────────────────────── */
+.preloader-status {
+    font-size: .8rem;
+    color: rgba(255, 255, 255, .45);
+    min-height: 20px;
+    transition: opacity .3s;
+    text-align: center;
+}
+
+.preloader-status.changing {
+    opacity: 0;
+}
+
+/* ── points orbitaux ──────────────────────────────────── */
+.preloader-dots {
+    display: flex;
+    gap: 8px;
+    margin-top: 32px;
+}
+
+.preloader-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .25);
+    animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+.preloader-dots span:nth-child(2) { animation-delay: .2s; }
+.preloader-dots span:nth-child(3) { animation-delay: .4s; }
+
+@keyframes dotPulse {
+    0%, 80%, 100% { transform: scale(.6); opacity: .3; }
+    40%           { transform: scale(1);   opacity: 1; }
+}
+
+/* ── pourcentage ──────────────────────────────────────── */
+.preloader-percent {
+    font-size: .75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, .3);
+    margin-top: 8px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── message de bienvenue final ───────────────────────── */
+.preloader-welcome {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity .5s ease, transform .5s ease;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #60a5fa;
+    margin-top: 14px;
+    text-align: center;
+}
+
+.preloader-welcome.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* ── responsive ───────────────────────────────────────── */
+@media (max-width: 480px) {
+    .preloader-logo { width: 64px; height: 64px; margin-bottom: 20px; }
+    .preloader-title { font-size: 1.25rem; }
+    .preloader-progress-track { width: 220px; }
+}
