@@ -623,11 +623,12 @@ $printUrl = '?' . http_build_query($printQuery);
         margin-top: 16px;
         font-size: 15px;
         line-height: 1;
+        margin-bottom: 0px !important;
     }
 
     .signature-block {
         text-align: center;
-        margin-top: 12px;
+        margin-top: 12px !important;
         line-height: 1;
     }
 
@@ -913,11 +914,14 @@ $printUrl = '?' . http_build_query($printQuery);
                     Fait à Kabinda, le <?= date('d/m/Y') ?>
                 </div>
 
-                <div class="signature-block">
-                    <div class="service">CELLULE INFORMATIQUE ET NUMERIQUE</div>
-                    <br>
-                    <div class="name">Ir. Jean Marie IBANGA MBAYO</div>
-                    <div class="role">Ass. &amp; Développeur full-stack</div>
+                <div class="signature-block" style="position: relative; min-height: 110px; margin-top: 10px !important;">
+                    <div style="position: absolute; left: 0; right: 0; top: 8px; z-index: 2; pointer-events: none;">
+                        <img src="img/signature-ibm.png" alt="Signature Jean Marie IBANGA" style="max-width:160px; min-width:120px; width:38vw; height:auto; opacity:0.92; object-fit:contain; display:block; margin:0 auto; filter: grayscale(0.1) contrast(1.1); transform: translateY(0px);">
+                    </div>
+                    <div class="service" style="position:relative; z-index:3; margin-top:15px;">CELLULE INFORMATIQUE ET NUMERIQUE</div>
+                    <br> <br> <br>
+                    <div class="name" style="position:relative; z-index:3;">Ir. Jean Marie IBANGA MBAYO</div>
+                    <div class="role" style="position:relative; z-index:3;">Ass. &amp; Développeur full-stack</div>
                 </div>
             </div>
         </div>
